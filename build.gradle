@@ -1,0 +1,52 @@
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'findbugs'
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '2.3'
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+//    compile 'args4j:args4j:2.32'
+	compile 'com.google.code.findbugs:annotations:3.0.0'
+    compile 'org.apache.commons:commons-lang3:3.4'
+    compile 'com.google.guava:guava:19.0'
+    compile 'org.ow2.asm:asm:5.1'
+    compile 'org.ow2.asm:asm-util:5.1'
+    
+	compile fileTree(dir: 'lib', include: '*.jar')
+
+    testCompile 'junit:junit:4.12'
+}
+
+tasks.withType(JavaCompile) {
+    options.compilerArgs << "-Xlint:deprecation"
+    options.compilerArgs << "-Werror"
+}
+
+// testing related activities -----------------
+tasks.withType(FindBugs) {
+    effort = "default"
+    reportLevel = "medium"
+
+    reports {
+        xml.enabled = false
+        html.enabled = true
+    }
+ }
+ 
+ // building the jar ---------------------
+jar {
+    manifest {
+        attributes 'Main-Class': "Main",
+                   'Class-Path': '.',
+                   'Implementation-Title': 'DynSlicer',
+                   'Implementation-Version': "$version"
+    }
+
+    from configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
+}
