@@ -58,15 +58,13 @@ public class InstrumentConditionals {
 
 		@Override
 		public void visit(int version, int access, String name, String signature, String superName,
-				String[] interfaces) {
-			System.err.println("XX " + name);
+				String[] interfaces) {			
 			className = name;
 			cv.visit(version, access, name, signature, superName, interfaces);
 		}
 
 		@Override
-		public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
-			System.err.println(name);			
+		public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {			
 			MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
 			return new MethodAdapter(mv, className);
 		}

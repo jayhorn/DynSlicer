@@ -2,6 +2,26 @@ apply plugin: 'java'
 apply plugin: 'eclipse'
 apply plugin: 'findbugs'
 
+def lib_dir = new File('lib/')
+if (!lib_dir.exists()) {
+	lib_dir.mkdirs()
+}
+def randoop_jar = new File('lib/randoop.jar')
+if (!randoop_jar.exists()) {	
+	println "downloading randoop"	
+    new URL('http://www.csl.sri.com/users/schaef/jars/randoop.jar').withInputStream{ i -> randoop_jar.withOutputStream{ it << i }}
+}
+def daikon_jar = new File('lib/daikon.jar')
+if (!daikon_jar.exists()) {
+	println "downloading daikon"
+    new URL('http://www.csl.sri.com/users/schaef/jars/daikon.jar').withInputStream{ i -> daikon_jar.withOutputStream{ it << i }}
+}
+def junit_jar = new File('lib/junit.jar')
+if (!junit_jar.exists()) {
+	println "downloading junit"
+    new URL('https://github.com/junit-team/junit4/releases/download/r4.12/junit-4.12.jar').withInputStream{ i -> junit_jar.withOutputStream{ it << i }}
+}
+
 task wrapper(type: Wrapper) {
     gradleVersion = '2.3'
 }
