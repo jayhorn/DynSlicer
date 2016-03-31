@@ -19,66 +19,56 @@ import org.objectweb.asm.ClassReader;
 
 import util.DaikonRunner;
 import util.RandoopRunner;
+import util.DaikonRunner.DaikonTrace;
 
 public class Main {
 
 	public static void main(String[] args) {
-		if (args.length!=2) {
-			System.err.println("use with classpath and classdir as arguments.");
+		if (args.length != 3) {
+			System.err.println("use with classpath, classdir, and testDir as arguments.");
 			return;
 		}
 		String classPath = args[0];
 		final String classDir = args[1];
-
-		
-		final String classListFile = "classes.txt";
-		final String testDir = "rd_tests";
+		final File testDir = new File(args[2]);
 
 		Set<String> classes = getClasses(classDir);
-		createClassListFile(classes, classListFile);
-
-		if (!new File(testDir).exists()) {
+		// run randoop
+		File classListFile = null;
+		try {
+			classListFile = createClassListFile(classes);
 			RandoopRunner rr = new RandoopRunner();
-			rr.run(classPath + File.pathSeparator + classDir, classListFile, testDir, 5);
-		} else {
-			System.out.println("Tests already exist. Delete " + testDir + " to re-run randoop.");
+			rr.run(classPath + File.pathSeparator + classDir, classListFile, testDir, 1, 10);
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+			if (classListFile != null && !classListFile.delete()) {
+				throw new RuntimeException("failed to clean up");
+			}
 		}
-		
+
 		final String transformedDir = "trans_classes";
-		transformAllClasses(new File(classDir), new File(transformedDir));
+		InstrumentConditionals icond = new InstrumentConditionals();
+		icond.transformAllClasses(new File(classDir), new File(transformedDir));
 
 		DaikonRunner dr = new DaikonRunner();
 		List<String> cp = new LinkedList<String>();
 		cp.add(classPath);
 		cp.add("lib/daikon.jar");
-		cp.add(testDir);
+		cp.add(testDir.getAbsolutePath());
 		cp.add(transformedDir);
 		final String daikonClassPath = StringUtils.join(cp, File.pathSeparator);
-		dr.run(daikonClassPath, "ErrorTestDriver");
-	}
+		Set<DaikonTrace> traces = dr.run(daikonClassPath, "ErrorTestDriver");
 
-	private static void transformAllClasses(File classDir, File outDir) {
-		System.out.println("Transforming classes");
-		InstrumentConditionals icond = new InstrumentConditionals();
-				
-		for (Iterator<File> iter = FileUtils.iterateFiles(classDir, new String[] { "class" }, true); iter
-				.hasNext();) {
-			File classFile = iter.next();
-			File transformedClass = new File(classFile.getAbsolutePath().replace(classDir.getAbsolutePath(), outDir.getAbsolutePath()));
-			final String tClassName = transformedClass.getAbsolutePath();
-			if (tClassName.contains(File.separator)) {
-				File tClassDir = new File(tClassName.substring(0, tClassName.lastIndexOf(File.separator)));
-				if (tClassDir.mkdirs()) {
-					System.out.println("Wrote transformed classes to "+tClassDir.getAbsolutePath());
-				}
-			}
-			icond.instrumentClass(classFile.getAbsolutePath(), transformedClass.getAbsolutePath());
+		System.err.println("------------- traces --------------");
+		for (DaikonTrace dt : traces) {
+			System.err.println(dt.toString());
 		}
-		System.out.println("Done.");
 	}
 
-	private static void createClassListFile(Set<String> classes, final String fileName) {
-		try (OutputStream streamOut = new FileOutputStream(fileName);
+	private static File createClassListFile(Set<String> classes) throws IOException {
+		File classListFile = File.createTempFile("clist", "txt");
+		try (OutputStream streamOut = new FileOutputStream(classListFile);
 				PrintWriter writer = new PrintWriter(new OutputStreamWriter(streamOut, "UTF-8"))) {
 			for (String className : classes) {
 				writer.println(className);
@@ -86,6 +76,7 @@ public class Main {
 		} catch (IOException e) {
 			e.printStackTrace(System.err);
 		}
+		return classListFile;
 	}
 
 	private static Set<String> getClasses(final String classDir) {

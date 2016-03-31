@@ -25,7 +25,7 @@ public class RandoopRunner extends AbstractRunner{
 	 * @param testDir
 	 * @param timeSec
 	 */
-	public void run(final String classPath, final String classListFile, final String testDir, final int timeSec) {
+	public void run(final String classPath, final File classListFile, final File testDir, final int timeSec, final int outputLimit) {
 		System.out.println("Running Randoop.");
 		
 		List<String> cmd = new LinkedList<String>();
@@ -35,15 +35,18 @@ public class RandoopRunner extends AbstractRunner{
 		cmd.add(classPath+File.pathSeparator+"lib/randoop.jar");
 		cmd.add("randoop.main.Main");
 		cmd.add("gentests");
-		cmd.add("--classlist="+classListFile);
+		cmd.add("--classlist="+classListFile.getAbsolutePath());
 		cmd.add("--timelimit="+timeSec);
+		if (outputLimit>0) {
+			cmd.add("--outputlimit="+outputLimit);
+		}
 		cmd.add("--junit-reflection-allowed=false");
 		cmd.add("--silently-ignore-bad-class-names=true");
 		cmd.add("--unchecked-exception=ERROR");
 		cmd.add("--no-regression-tests=true");
 		cmd.add("--npe-on-null-input=ERROR");
 		cmd.add("--npe-on-non-null-input=ERROR");
-		cmd.add("--junit-output-dir="+testDir);		
+		cmd.add("--junit-output-dir="+testDir);			
 		execute(cmd);
 		
 		System.out.println("Compiling test cases.");	
@@ -53,14 +56,14 @@ public class RandoopRunner extends AbstractRunner{
 		cmd.add("-classpath");
 		cmd.add(classPath+File.pathSeparator+"lib/junit.jar");
 		
-		for (Iterator<File> iter = FileUtils.iterateFiles(new File(testDir), new String[] { "java" }, true); iter
+		for (Iterator<File> iter = FileUtils.iterateFiles(testDir, new String[] { "java" }, true); iter
 		.hasNext();) {
 			File testSrcFile = iter.next();
 			cmd.add(testSrcFile.getAbsolutePath());
 		}
 		
 		cmd.add("-d");
-		cmd.add(testDir);
+		cmd.add(testDir.getAbsolutePath());
 		execute(cmd);
 		
 		System.out.println("Done.");

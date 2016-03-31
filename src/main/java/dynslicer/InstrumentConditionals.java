@@ -3,10 +3,13 @@
  */
 package dynslicer;
 
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.Iterator;
 
+import org.apache.commons.io.FileUtils;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
@@ -24,6 +27,23 @@ public class InstrumentConditionals {
 
 	public static final String conditionalMethodName = "__CONDITION__METHOD";
 
+	public void transformAllClasses(File classDir, File outDir) {				
+		for (Iterator<File> iter = FileUtils.iterateFiles(classDir, new String[] { "class" }, true); iter
+				.hasNext();) {
+			File classFile = iter.next();
+			File transformedClass = new File(classFile.getAbsolutePath().replace(classDir.getAbsolutePath(), outDir.getAbsolutePath()));
+			final String tClassName = transformedClass.getAbsolutePath();
+			if (tClassName.contains(File.separator)) {
+				File tClassDir = new File(tClassName.substring(0, tClassName.lastIndexOf(File.separator)));
+				if (tClassDir.mkdirs()) {
+					System.out.println("Wrote transformed classes to "+tClassDir.getAbsolutePath());
+				}
+			}
+			instrumentClass(classFile.getAbsolutePath(), transformedClass.getAbsolutePath());
+		}
+		System.out.println("Done.");
+	}
+	
 	/**
 	 * Reads class file 'inFile' and looks for any conditional
 	 * if (e) ...
