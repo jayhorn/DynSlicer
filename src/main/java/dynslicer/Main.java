@@ -23,13 +23,16 @@ import util.RandoopRunner;
 public class Main {
 
 	public static void main(String[] args) {
-//		final String inFile = "/Users/schaef/git/integration-test/corpus/sorting/00_sort/Sort01/classes/Sort01.class";
-//		final String outFile = "./Sort01.class";
+		if (args.length!=2) {
+			System.err.println("use with classpath and classdir as arguments.");
+			return;
+		}
+		String classPath = args[0];
+		final String classDir = args[1];
+
+		
 		final String classListFile = "classes.txt";
 		final String testDir = "rd_tests";
-
-		String classPath = ".";
-		final String classDir = "/Users/schaef/git/integration-test/corpus/sorting/00_sort/Sort01/classes";
 
 		Set<String> classes = getClasses(classDir);
 		createClassListFile(classes, classListFile);
@@ -65,7 +68,9 @@ public class Main {
 			final String tClassName = transformedClass.getAbsolutePath();
 			if (tClassName.contains(File.separator)) {
 				File tClassDir = new File(tClassName.substring(0, tClassName.lastIndexOf(File.separator)));
-				tClassDir.mkdirs();	
+				if (tClassDir.mkdirs()) {
+					System.out.println("Wrote transformed classes to "+tClassDir.getAbsolutePath());
+				}
 			}
 			icond.instrumentClass(classFile.getAbsolutePath(), transformedClass.getAbsolutePath());
 		}

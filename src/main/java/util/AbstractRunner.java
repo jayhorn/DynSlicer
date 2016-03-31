@@ -61,20 +61,20 @@ public abstract class AbstractRunner {
 		// }
 	}
 
-	static class Worker extends Thread {
-		public final Process process;
-		public Integer exit;
-
-		Worker(Process process) {
-			this.process = process;
-		}
-
-		public void run() {
-			try {
-				exit = process.waitFor();
-			} catch (InterruptedException ignore) {
-				return;
-			}
-		}
-	}
+//	static class Worker extends Thread {
+//		public final Process process;
+//		public Integer exit;
+//
+//		Worker(Process process) {
+//			this.process = process;
+//		}
+//
+//		public void run() {
+//			try {
+//				exit = process.waitFor();
+//			} catch (InterruptedException ignore) {
+//				return;
+//			}
+//		}
+//	}
 }
