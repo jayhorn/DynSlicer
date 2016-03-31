@@ -6,6 +6,7 @@ def lib_dir = new File('lib/')
 if (!lib_dir.exists()) {
 	lib_dir.mkdirs()
 }
+
 def randoop_jar = new File('lib/randoop.jar')
 if (!randoop_jar.exists()) {	
 	println "downloading randoop"	
@@ -21,6 +22,13 @@ if (!junit_jar.exists()) {
 	println "downloading junit"
     new URL('https://github.com/junit-team/junit4/releases/download/r4.12/junit-4.12.jar').withInputStream{ i -> junit_jar.withOutputStream{ it << i }}
 }
+
+def soot_jar = new File('lib/soot-trunk.jar')
+if (!soot_jar.exists()) {	
+	println "downloading soot"	
+    new URL('https://ssebuild.cased.de/nightly/soot/lib/soot-trunk.jar').withInputStream{ i -> soot_jar.withOutputStream{ it << i }}
+}
+
 
 task wrapper(type: Wrapper) {
     gradleVersion = '2.3'

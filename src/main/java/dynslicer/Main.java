@@ -19,6 +19,7 @@ import org.objectweb.asm.ClassReader;
 
 import util.DaikonRunner;
 import util.RandoopRunner;
+import util.SootSlicer;
 import util.DaikonRunner.DaikonTrace;
 
 public class Main {
@@ -60,10 +61,10 @@ public class Main {
 		final String daikonClassPath = StringUtils.join(cp, File.pathSeparator);
 		Set<DaikonTrace> traces = dr.run(daikonClassPath, "ErrorTestDriver");
 
-		System.err.println("------------- traces --------------");
-		for (DaikonTrace dt : traces) {
-			System.err.println(dt.toString());
-		}
+		// compute the slices and run the fault localization:
+		
+		SootSlicer ss = new SootSlicer();
+		ss.computeErrorSlices(new File(transformedDir), classPath, traces);
 	}
 
 	private static File createClassListFile(Set<String> classes) throws IOException {

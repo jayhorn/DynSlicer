@@ -26,6 +26,7 @@ import com.google.common.base.Preconditions;
 public class InstrumentConditionals {
 
 	public static final String conditionalMethodName = "__CONDITION__METHOD";
+	public static final String conditionalMethodArgName = "arg";
 
 	public void transformAllClasses(File classDir, File outDir) {				
 		for (Iterator<File> iter = FileUtils.iterateFiles(classDir, new String[] { "class" }, true); iter
@@ -117,7 +118,7 @@ public class InstrumentConditionals {
 			mv.visitInsn(IRETURN);
 			mv.visitMaxs(1, 1);
 			mv.visitLabel(endLabel);
-			mv.visitLocalVariable("arg", "Z", null, new Label(), endLabel, 0);
+			mv.visitLocalVariable(conditionalMethodArgName, "Z", null, new Label(), endLabel, 0);
 			mv.visitEnd();
 			super.visitEnd();
 		}
@@ -148,16 +149,22 @@ public class InstrumentConditionals {
 			if (opcode==Opcodes.GOTO) {
 				return; //Don't do goto's
 			}
-//			Printer printer = new Textifier();
-//			printer.visitJumpInsn(opcode, label);
-//			StringWriter writer = new StringWriter();
-//			printer.print(new PrintWriter(writer));
-//			System.err.println(writer.toString());
+			final Label thenLabel = new Label();
+			final Label joinLabel = new Label();
+			// visit the old jump instruction
+			super.visitJumpInsn(opcode, thenLabel);
+			// else block (note that in bytecode the else comes first)
+			super.visitInsn(Opcodes.ICONST_1);
+			super.visitJumpInsn(Opcodes.GOTO, joinLabel);
+			super.visitLabel(thenLabel);
+			//then block
+			super.visitInsn(Opcodes.ICONST_0);
+			super.visitLabel(joinLabel);
 			super.visitMethodInsn(INVOKESTATIC, className, conditionalMethodName, "(Z)Z", false);
 			super.visitJumpInsn(Opcodes.IFEQ, label);
 		}
 
-
+		
 		
 	}
 
