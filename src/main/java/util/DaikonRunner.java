@@ -51,17 +51,6 @@ public class DaikonRunner extends AbstractRunner {
 			throw new Error(e);
 		}
 		return processor.traces;
-//		
-//		// At this point, the processor has been called on each sample in turn.
-//		// Now, we can do whatever we like with the data.
-//		for (PptTopLevel ppt : processor.samples.keySet()) {
-//			for (ValueTuple vt : processor.samples.get(ppt)) {
-//				System.out.printf("%nSample for %s :%n", ppt.name());
-//				for (VarInfo vi : ppt.var_infos) {
-//					System.out.printf("%s = %s%n", vi.name(), vt.getValueOrNull(vi));
-//				}
-//			}
-//		}
 	}
 
 	/**
@@ -87,7 +76,8 @@ public class DaikonRunner extends AbstractRunner {
 				if (currentTrace!=null) {
 					traces.add(currentTrace);
 				} 
-				currentTrace = new DaikonTrace();				
+				currentTrace = new DaikonTrace();
+				currentTrace.addPoint(ppt, vt);
 			} else if (currentTrace!=null) {
 				currentTrace.addPoint(ppt, vt);
 			}

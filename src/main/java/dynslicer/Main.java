@@ -47,24 +47,22 @@ public class Main {
 				throw new RuntimeException("failed to clean up");
 			}
 		}
-
-		final String transformedDir = "trans_classes";
+		
 		InstrumentConditionals icond = new InstrumentConditionals();
-		icond.transformAllClasses(new File(classDir), new File(transformedDir));
+		icond.transformAllClasses(new File(classDir), testDir);
 
 		DaikonRunner dr = new DaikonRunner();
 		List<String> cp = new LinkedList<String>();
 		cp.add(classPath);
 		cp.add("lib/daikon.jar");
-		cp.add(testDir.getAbsolutePath());
-		cp.add(transformedDir);
+		cp.add(testDir.getAbsolutePath());		
 		final String daikonClassPath = StringUtils.join(cp, File.pathSeparator);
 		Set<DaikonTrace> traces = dr.run(daikonClassPath, "ErrorTestDriver");
 
 		// compute the slices and run the fault localization:
 		
 		SootSlicer ss = new SootSlicer();
-		ss.computeErrorSlices(new File(transformedDir), classPath, traces);
+		ss.computeErrorSlices(testDir, classPath+File.pathSeparator+"lib/junit.jar", traces);
 	}
 
 	private static File createClassListFile(Set<String> classes) throws IOException {

@@ -10,8 +10,6 @@ import org.apache.commons.io.FileUtils;
 import org.junit.Assert;
 import org.junit.Test;
 
-import com.google.common.io.Files;
-
 import dynslicer.Main;
 
 /**
@@ -30,7 +28,11 @@ public class BasicTest {
 		File testDir = null;
 		try {
 			System.out.println("Create temp dir");
-			testDir = Files.createTempDir();
+			testDir = new File("slicerData");
+			if (testDir.exists()) {
+				FileUtils.deleteDirectory(testDir); 
+			}
+			Assert.assertTrue(testDir.mkdir());
 			System.out.println("Compile source");
 			classDir = Util.compileJavaFiles(srcDir, ".");
 			System.out.println("Run Main");
@@ -39,8 +41,7 @@ public class BasicTest {
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
-			FileUtils.deleteDirectory(classDir); 
-			FileUtils.deleteDirectory(testDir); 
+			FileUtils.deleteDirectory(classDir); 			
 		}
 		Assert.assertTrue(true);
 	}

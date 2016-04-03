@@ -13,11 +13,10 @@ import org.apache.commons.io.FileUtils;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
-
-import com.google.common.base.Preconditions;
 
 /**
  * @author schaef
@@ -28,6 +27,10 @@ public class InstrumentConditionals {
 	public static final String conditionalMethodName = "__CONDITION__METHOD";
 	public static final String conditionalMethodArgName = "arg";
 
+	public static final String pcMethodName = "__PC__METHOD";
+	public static final String pcMethodArgName = "arg";
+
+	
 	public void transformAllClasses(File classDir, File outDir) {				
 		for (Iterator<File> iter = FileUtils.iterateFiles(classDir, new String[] { "class" }, true); iter
 				.hasNext();) {
@@ -120,48 +123,132 @@ public class InstrumentConditionals {
 			mv.visitLabel(endLabel);
 			mv.visitLocalVariable(conditionalMethodArgName, "Z", null, new Label(), endLabel, 0);
 			mv.visitEnd();
+			
+			//create empty method to sample instruction counter.
+			endLabel = new Label();
+			mv = cv.visitMethod(ACC_PRIVATE | ACC_STATIC, pcMethodName, "(I)V", null, null);
+			mv.visitInsn(RETURN);
+			mv.visitMaxs(0, 1);
+			mv.visitLabel(endLabel);
+			mv.visitLocalVariable(pcMethodArgName, "I", null, new Label(), endLabel, 0);
+			mv.visitEnd();
 			super.visitEnd();
 		}
 	}
 
 	static class MethodAdapter extends MethodVisitor implements Opcodes {
 
+		private int instCounter = 0;
+		
 		protected final String className;
 		
 		public MethodAdapter(MethodVisitor mv, String className) {
 			super(ASM5, mv);			
 			this.className = className;
 		}
+
+		private void sampleInstCounter() {
+			super.visitIntInsn(BIPUSH, instCounter);
+			super.visitMethodInsn(INVOKESTATIC, className, pcMethodName, "(I)V", false);
+			instCounter++;
+		}
+		
+		@Override
+		public void visitIntInsn(int opcode, int operand) {
+			// TODO Auto-generated method stub
+			sampleInstCounter();
+			super.visitIntInsn(opcode, operand);
+		}
+
+		@Override
+		public void visitVarInsn(int opcode, int var) {
+			// TODO Auto-generated method stub
+			sampleInstCounter();
+			super.visitVarInsn(opcode, var);
+		}
+
+		@Override
+		public void visitTypeInsn(int opcode, String type) {
+			// TODO Auto-generated method stub
+			sampleInstCounter();
+			super.visitTypeInsn(opcode, type);
+		}
+
+		@Override
+		public void visitFieldInsn(int opcode, String owner, String name, String desc) {
+			// TODO Auto-generated method stub
+			sampleInstCounter();
+			super.visitFieldInsn(opcode, owner, name, desc);
+		}
+
+		@Override
+		public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
+			// TODO Auto-generated method stub
+			sampleInstCounter();
+			super.visitMethodInsn(opcode, owner, name, desc, itf);
+		}
+
+		@Override
+		public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
+			// TODO Auto-generated method stub
+			sampleInstCounter();
+			super.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
+		}
+
+		@Override
+		public void visitLdcInsn(Object cst) {			
+			// TODO Auto-generated method stub
+			sampleInstCounter();
+			super.visitLdcInsn(cst);
+		}
+
+		@Override
+		public void visitIincInsn(int var, int increment) {
+			// TODO Auto-generated method stub
+			sampleInstCounter();
+			super.visitIincInsn(var, increment);
+		}
+
+		@Override
+		public void visitMultiANewArrayInsn(String desc, int dims) {
+			// TODO Auto-generated method stub
+			sampleInstCounter();
+			super.visitMultiANewArrayInsn(desc, dims);
+		}
 		
 		@Override
 		public void visitTableSwitchInsn(int min, int max, Label dflt, Label... labels) {
-			throw new RuntimeException("Not implemented");
+			sampleInstCounter();
+			super.visitTableSwitchInsn(min, max, dflt, labels);			
 		}
 
 		@Override
 		public void visitLookupSwitchInsn(Label dflt, int[] keys, Label[] labels) {
-			throw new RuntimeException("Not implemented");
+			sampleInstCounter();
+			super.visitLookupSwitchInsn(dflt, keys, labels);
 		}
 
 		@Override
-		public void visitJumpInsn(int opcode, Label label) {			
-			Preconditions.checkNotNull(this.className);
-			if (opcode==Opcodes.GOTO) {
-				return; //Don't do goto's
-			}
-			final Label thenLabel = new Label();
-			final Label joinLabel = new Label();
-			// visit the old jump instruction
-			super.visitJumpInsn(opcode, thenLabel);
-			// else block (note that in bytecode the else comes first)
-			super.visitInsn(Opcodes.ICONST_1);
-			super.visitJumpInsn(Opcodes.GOTO, joinLabel);
-			super.visitLabel(thenLabel);
-			//then block
-			super.visitInsn(Opcodes.ICONST_0);
-			super.visitLabel(joinLabel);
-			super.visitMethodInsn(INVOKESTATIC, className, conditionalMethodName, "(Z)Z", false);
-			super.visitJumpInsn(Opcodes.IFEQ, label);
+		public void visitJumpInsn(int opcode, Label label) {
+			sampleInstCounter();
+			super.visitJumpInsn(opcode, label);
+//			Preconditions.checkNotNull(this.className);
+//			if (opcode==Opcodes.GOTO) {
+//				return; //Don't do goto's
+//			}
+//			final Label thenLabel = new Label();
+//			final Label joinLabel = new Label();
+//			// visit the old jump instruction
+//			super.visitJumpInsn(opcode, thenLabel);
+//			// else block (note that in bytecode the else comes first)
+//			super.visitInsn(Opcodes.ICONST_1);
+//			super.visitJumpInsn(Opcodes.GOTO, joinLabel);
+//			super.visitLabel(thenLabel);
+//			//then block
+//			super.visitInsn(Opcodes.ICONST_0);
+//			super.visitLabel(joinLabel);
+//			super.visitMethodInsn(INVOKESTATIC, className, conditionalMethodName, "(Z)Z", false);
+//			super.visitJumpInsn(Opcodes.IFEQ, label);
 		}
 
 		

@@ -2,9 +2,12 @@ package util;
 
 import java.io.File;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Stack;
+
+import com.google.common.base.Verify;
 
 import daikon.PptTopLevel;
 import daikon.ValueTuple;
@@ -12,10 +15,15 @@ import daikon.VarInfo;
 import daikon.util.Pair;
 import dynslicer.InstrumentConditionals;
 import soot.Body;
+import soot.PatchingChain;
 import soot.Scene;
 import soot.SootClass;
 import soot.SootMethod;
 import soot.Unit;
+import soot.Value;
+import soot.jimple.IntConstant;
+import soot.jimple.InvokeExpr;
+import soot.jimple.InvokeStmt;
 import soot.options.Options;
 import util.DaikonRunner.DaikonTrace;
 
@@ -30,46 +38,100 @@ public class SootSlicer {
 
 	public void computeErrorSlice(DaikonTrace trace) {
 
-		Stack<Pair<SootMethod, Unit>> callStack = new Stack<Pair<SootMethod, Unit>>();
-		for (Pair<PptTopLevel, ValueTuple> pair : trace.trace) {
-			if (pair.a.name.endsWith(":::ENTER")) {
-				if (pair.a.name.contains(InstrumentConditionals.conditionalMethodName)) {
-					VarInfo vi = pair.a.find_var_by_name(InstrumentConditionals.conditionalMethodArgName);					
-					boolean cond = (Long)pair.b.getValueOrNull(vi)!=0L;
-					if (cond) {
-						System.err.println("\tThen");
-					} else {
-						System.err.println("\tElse");
-					}
-				} else {
-					SootMethod sm = findMethodForPpt(pair.a);									
-					Unit entry = null;					
-					Body b = sm.retrieveActiveBody();
-					if (b!=null) {
-						entry = b.getUnits().getFirst();						
-					}
-					callStack.push(Pair.of(sm, entry));
-					System.err.println(sm.getName());
-										
-					for (VarInfo vi : pair.a.var_infos) {
-						System.err.printf("%s = %s%n", vi.name(), pair.b.getValueOrNull(vi));
-					}
-				
-					
-					
-				}
-			} else if (pair.a.name.endsWith(":::EXIT")) {
-				if (pair.a.name.contains(InstrumentConditionals.conditionalMethodName)) {
-					// Do nothing
-				} else {
-					// SootMethod sm = findMethodForPpt(pair.a);
-					callStack.pop();
-				}
-			}
-
+		Iterator<Pair<PptTopLevel, ValueTuple>> iterator = trace.trace.iterator();
+		List<Unit> sootTrace = new LinkedList<Unit>();
+		while (iterator.hasNext()) {
+			sootTrace.addAll(bar(iterator));
 		}
+
+		for (Unit u : sootTrace) {
+			System.err.println("   " + u);
+		}
+
 		System.err.println(".......");
 	}
+	
+	private List<Unit> bar(Iterator<Pair<PptTopLevel, ValueTuple>> iterator) {
+		final List<Unit> sootTrace = new LinkedList<Unit>();
+		Pair<PptTopLevel, ValueTuple> ppt = iterator.next();
+		Verify.verify(ppt.a.name.endsWith(":::ENTER"), "Ppt is not a procedure entry: " + ppt.a.name);
+		
+		SootMethod sm = findMethodForPpt(ppt.a);
+		Body body = sm.retrieveActiveBody();
+		
+		Stack<SootMethod> methodStack = new Stack<SootMethod>(); 
+		methodStack.push(sm);		
+		
+		while (iterator.hasNext()) {
+			ppt = iterator.next();
+			if (ppt.a.name.contains(InstrumentConditionals.pcMethodName) && ppt.a.name.endsWith(":::ENTER")) {
+				VarInfo vi = ppt.a.find_var_by_name(InstrumentConditionals.pcMethodArgName);
+				//skip the exit of this method as well.
+				ppt = iterator.next();
+				long arg = (Long)ppt.b.getValueOrNull(vi);
+				List<Integer> skipList = new LinkedList<Integer>();
+				sootTrace.add(findUnitAtPos(body, arg, skipList));
+				for (int i : skipList) {
+					ppt = iterator.next();
+					Verify.verify(ppt.a.name.contains(InstrumentConditionals.pcMethodName) && ppt.a.name.endsWith(":::ENTER"));
+					vi = ppt.a.find_var_by_name(InstrumentConditionals.pcMethodArgName);
+					arg = (Long)ppt.b.getValueOrNull(vi);
+					Verify.verify(arg==(long)i, "Wrong number "+arg+"!="+i);
+					ppt = iterator.next();
+					Verify.verify(ppt.a.name.contains(InstrumentConditionals.pcMethodName) && ppt.a.name.contains(":::EXIT"));
+				}
+			} else if (ppt.a.name.contains(InstrumentConditionals.conditionalMethodName)&& ppt.a.name.endsWith(":::ENTER")) {
+				//skip the exit of this method as well.
+				ppt = iterator.next();				
+			} else if (ppt.a.name.endsWith(":::ENTER")) {
+				sm = findMethodForPpt(ppt.a);
+				body = sm.retrieveActiveBody();
+				methodStack.push(sm);								
+			} else if (ppt.a.name.contains(":::EXIT")) {
+				methodStack.pop();
+				sm = methodStack.peek();
+				body = sm.retrieveActiveBody();
+			} else {
+				System.err.println("Don't know how to handle " + ppt.a.name);
+			}
+		}	
+		return sootTrace;
+	}
+	
+	private Unit findUnitAtPos(Body body, long pos, List<Integer> outSkipList) {
+		PatchingChain<Unit> units = body.getUnits();
+		Unit ret = null;
+		for (Unit u : units) {
+			if (u instanceof InvokeStmt) {
+				InvokeStmt ivk = (InvokeStmt)u;
+				InvokeExpr ie = ivk.getInvokeExpr();
+				List<Value> args = ie.getArgs();
+
+				if (isPcMethod(ivk)
+						&& (((IntConstant)args.get(0)).value == (int)pos)) {
+					Unit next = units.getSuccOf(u);
+					while (isPcMethod(next) && next!=null) {
+						Value v = ((InvokeStmt)next).getInvokeExpr().getArg(0);
+						outSkipList.add(((IntConstant)v).value );								
+						next = units.getSuccOf(next);
+					}
+					return next;
+				}
+			}
+		}
+		return ret;
+	}
+	
+	private boolean isPcMethod(Unit u) {
+		if (u instanceof InvokeStmt) {
+			InvokeStmt ivk = (InvokeStmt)u;
+			return ivk.getInvokeExpr().getMethod().getName().equals(InstrumentConditionals.pcMethodName);
+		}
+		return false;
+	}
+	
+
+
 
 	private SootMethod findMethodForPpt(PptTopLevel ppt) {
 		String qualifiedMethodName = ppt.name.substring(0, ppt.name.indexOf("("));
