@@ -13,12 +13,11 @@ public class TestClass01 {
 		new TestClass01().test01(1, 2, 3);
 	}
 	
+	String s = "Hello";
+	
 	public int test01(int x, int y, int z) {
-		String s = "Hello";
-		if (x==0) {
-			s = null;
-		}
-		
+		s= foo(x);
+		y++;
 		if (y==0) {
 			if (z==0) {
 				s = "42";
@@ -29,4 +28,10 @@ public class TestClass01 {
 		return s.length();
 	}
 
+	public String foo(int x) {
+		if (x>0) {
+			return null;
+		}
+		return s;
+	}
 }

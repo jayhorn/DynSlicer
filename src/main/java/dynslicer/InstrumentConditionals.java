@@ -152,7 +152,13 @@ public class InstrumentConditionals {
 			super.visitMethodInsn(INVOKESTATIC, className, pcMethodName, "(I)V", false);
 			instCounter++;
 		}
-		
+
+		@Override
+		public void visitInsn(int opcode) {
+			sampleInstCounter();
+			super.visitInsn(opcode);
+		}
+
 		@Override
 		public void visitIntInsn(int opcode, int operand) {
 			// TODO Auto-generated method stub

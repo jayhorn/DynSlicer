@@ -39,7 +39,7 @@ public class Main {
 		try {
 			classListFile = createClassListFile(classes);
 			RandoopRunner rr = new RandoopRunner();
-			rr.run(classPath + File.pathSeparator + classDir, classListFile, testDir, 1, 10);
+			rr.run(classPath + File.pathSeparator + classDir, classListFile, new File(classDir), 1, 10);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
