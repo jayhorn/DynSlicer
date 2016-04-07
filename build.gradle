@@ -29,6 +29,12 @@ if (!soot_jar.exists()) {
     new URL('https://ssebuild.cased.de/nightly/soot/lib/soot-trunk.jar').withInputStream{ i -> soot_jar.withOutputStream{ it << i }}
 }
 
+def j2b_jar = new File('lib/j2b.jar')
+if (!j2b_jar.exists()) {	
+	println "downloading j2b"	
+    new URL('http://www.csl.sri.com/users/schaef/jars/j2b.jar').withInputStream{ i -> j2b_jar.withOutputStream{ it << i }}
+}
+
 
 task wrapper(type: Wrapper) {
     gradleVersion = '2.3'

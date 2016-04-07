@@ -17,8 +17,11 @@ import daikon.VarInfo;
 import daikon.util.Pair;
 import dynslicer.InstrumentConditionals;
 import soot.Body;
+import soot.DoubleType;
+import soot.FloatType;
 import soot.IntType;
 import soot.Local;
+import soot.LongType;
 import soot.Modifier;
 import soot.PatchingChain;
 import soot.RefLikeType;
@@ -31,6 +34,9 @@ import soot.ValueBox;
 import soot.VoidType;
 import soot.jimple.CaughtExceptionRef;
 import soot.jimple.DefinitionStmt;
+import soot.jimple.DoubleConstant;
+import soot.jimple.FieldRef;
+import soot.jimple.FloatConstant;
 import soot.jimple.GotoStmt;
 import soot.jimple.IdentityStmt;
 import soot.jimple.IfStmt;
@@ -40,6 +46,7 @@ import soot.jimple.InvokeExpr;
 import soot.jimple.InvokeStmt;
 import soot.jimple.Jimple;
 import soot.jimple.JimpleBody;
+import soot.jimple.LongConstant;
 import soot.jimple.NullConstant;
 import soot.jimple.ParameterRef;
 import soot.jimple.ReturnStmt;
@@ -48,11 +55,21 @@ import soot.jimple.Stmt;
 import soot.jimple.SwitchStmt;
 import soot.jimple.ThisRef;
 import soot.options.Options;
+import soot.tagkit.SourceFileTag;
+import soot.tagkit.Tag;
 import util.DaikonRunner.DaikonTrace;
 
 public class SootSlicer {
 
-	public void computeErrorSlices(File classDir, String classPath, Collection<DaikonTrace> traces) {
+	/**
+	 * Returns a soot class that contains one method per trace. Each method
+	 * contains the sequence of statements executed on that trace.
+	 * @param classDir
+	 * @param classPath
+	 * @param traces
+	 * @return
+	 */
+	public SootClass computeErrorSlices(File classDir, String classPath, Collection<DaikonTrace> traces) {
 		loadSootScene(classDir, classPath);
 		
 		SootClass myClass = new SootClass("HelloWorld", Modifier.PUBLIC);
@@ -62,21 +79,32 @@ public class SootSlicer {
 		for (DaikonTrace t : traces) {
 			computeErrorSlice(t, myClass);
 		}
+		
+		return myClass;
 	}
 
+	/**
+	 * For a given trace, create a method that contains the sequqnce of statements that are executed on that trace.
+	 * @param trace
+	 * @param containingClass
+	 */
 	public void computeErrorSlice(final DaikonTrace trace, final SootClass containingClass) {
 
 		Iterator<Pair<PptTopLevel, ValueTuple>> iterator = trace.trace.iterator();
-		SootMethod sm = bar(iterator, containingClass);
+		SootMethod sm = createTraceMethod(iterator, containingClass);
 		addFakeReturn(sm);
 		
-		for (Unit u : sm.getActiveBody().getUnits()) {
-			System.err.println("   " + u);
-		}
+//		for (Unit u : sm.getActiveBody().getUnits()) {
+//			System.err.println("   " + u);
+//		}
 		sm.getActiveBody().validate();
-		System.err.println(".......");
+//		System.err.println(".......");
 	}
 
+	/**
+	 * Add a fake return statement to the end of a method.
+	 * @param sm
+	 */
 	private void addFakeReturn(SootMethod sm) {
 		if (sm.getReturnType() instanceof VoidType) {
 			sm.getActiveBody().getUnits().add(Jimple.v().newReturnVoidStmt());
@@ -84,6 +112,13 @@ public class SootSlicer {
 			sm.getActiveBody().getUnits().add(Jimple.v().newReturnStmt(NullConstant.v()));
 		} else if (sm.getReturnType() instanceof IntType) {
 			sm.getActiveBody().getUnits().add(Jimple.v().newReturnStmt(IntConstant.v(0)));
+		} else if (sm.getReturnType() instanceof LongType) {
+			sm.getActiveBody().getUnits().add(Jimple.v().newReturnStmt(LongConstant.v(0)));
+		} else if (sm.getReturnType() instanceof FloatType) {
+			sm.getActiveBody().getUnits().add(Jimple.v().newReturnStmt(FloatConstant.v(0)));
+		} else if (sm.getReturnType() instanceof DoubleType) {
+			sm.getActiveBody().getUnits().add(Jimple.v().newReturnStmt(DoubleConstant.v(0)));
+
 		} else {
 			throw new RuntimeException("Not implemented for " + sm.getReturnType());
 		}
@@ -97,6 +132,11 @@ public class SootSlicer {
 			} 
 		}
 		ret.addAllTagsOf(u);
+		for (Tag t : this.sm.getDeclaringClass().getTags()) {
+			if (t instanceof SourceFileTag) {
+				ret.addTag(t);
+			}
+		}
 		return ret;
 	}
 
@@ -114,7 +154,7 @@ public class SootSlicer {
 	private SootMethod sm;
 	private Body body;
 	
-	private SootMethod bar(Iterator<Pair<PptTopLevel, ValueTuple>> iterator, final SootClass containingClass) {
+	private SootMethod createTraceMethod(Iterator<Pair<PptTopLevel, ValueTuple>> iterator, final SootClass containingClass) {
 //		final List<Unit> sootTrace = new LinkedList<Unit>();
 		final Stack<SootMethod> methodStack = new Stack<SootMethod>();
 		final Stack<Unit> callStack = new Stack<Unit>();
@@ -140,12 +180,25 @@ public class SootSlicer {
 
 				// skip the exit of this method as well.
 				ppt = iterator.next();
-
+				
 				List<Integer> skipList = new LinkedList<Integer>();
-				Unit u = findUnitAtPos(body, arg, skipList);
+				Unit u = findUnitAtPos(body, arg, skipList);				
 				if (u == null) {
 					// TODO:
 					continue;
+				}
+				for (ValueBox vb : u.getUseAndDefBoxes()) {
+					if (vb.getValue() instanceof FieldRef) {
+						if (!((FieldRef)vb.getValue()).getField().isPublic()) {
+							if (((FieldRef)vb.getValue()).getField().isStatic()) {
+								((FieldRef)vb.getValue()).getField().setModifiers(Modifier.PUBLIC | Modifier.STATIC);
+							} else {
+								((FieldRef)vb.getValue()).getField().setModifiers(Modifier.PUBLIC);
+							}
+						}
+					}
+						
+							
 				}
 				if (u instanceof IfStmt || u instanceof SwitchStmt || u instanceof GotoStmt) {
 					// ignore
@@ -334,10 +387,10 @@ public class SootSlicer {
 		sootOpt.set_keep_line_number(true);
 		sootOpt.set_prepend_classpath(true); // -pp
 		sootOpt.set_output_format(Options.output_format_class);
-		sootOpt.set_java_version(Options.java_version_1_7);
+//		sootOpt.set_java_version(Options.java_version_1_7);
 		sootOpt.set_soot_classpath(classPath);
 		sootOpt.set_src_prec(Options.src_prec_class);
-		sootOpt.set_asm_backend(true);
+//		sootOpt.set_asm_backend(true);
 		List<String> processDirs = new LinkedList<String>();
 		processDirs.add(classDir.getAbsolutePath());
 		sootOpt.set_process_dir(processDirs);

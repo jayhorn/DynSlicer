@@ -17,10 +17,11 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.objectweb.asm.ClassReader;
 
+import soot.SootClass;
 import util.DaikonRunner;
+import util.DaikonRunner.DaikonTrace;
 import util.RandoopRunner;
 import util.SootSlicer;
-import util.DaikonRunner.DaikonTrace;
 
 public class Main {
 
@@ -62,7 +63,10 @@ public class Main {
 		// compute the slices and run the fault localization:
 		
 		SootSlicer ss = new SootSlicer();
-		ss.computeErrorSlices(testDir, classPath+File.pathSeparator+"lib/junit.jar", traces);
+		SootClass traceClass = ss.computeErrorSlices(testDir, classPath+File.pathSeparator+"lib/junit.jar", traces);
+		
+		GroupTraces gt = new GroupTraces();
+		gt.groupStuff(traceClass);
 	}
 
 	private static File createClassListFile(Set<String> classes) throws IOException {

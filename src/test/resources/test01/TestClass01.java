@@ -25,6 +25,7 @@ public class TestClass01 {
 				s = null;
 			}
 		}
+		y--;
 		return s.length();
 	}
 
