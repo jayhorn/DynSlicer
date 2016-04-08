@@ -28,7 +28,8 @@ public class InstrumentConditionals {
 	public static final String pcMethodArgName = "arg";
 
 	
-	public void transformAllClasses(File classDir, File outDir) {				
+	public void transformAllClasses(File classDir, File outDir) {	
+		boolean failed = false;
 		for (Iterator<File> iter = FileUtils.iterateFiles(classDir, new String[] { "class" }, true); iter
 				.hasNext();) {
 			File classFile = iter.next();
@@ -37,12 +38,22 @@ public class InstrumentConditionals {
 			if (tClassName.contains(File.separator)) {
 				File tClassDir = new File(tClassName.substring(0, tClassName.lastIndexOf(File.separator)));
 				if (tClassDir.mkdirs()) {
-					System.out.println("Wrote transformed classes to "+tClassDir.getAbsolutePath());
+					System.out.println("Writing transformed classes to "+tClassDir.getAbsolutePath());
 				}
 			}
-			instrumentClass(classFile.getAbsolutePath(), transformedClass.getAbsolutePath());
+			try {
+				instrumentClass(classFile.getAbsolutePath(), transformedClass.getAbsolutePath());
+				System.out.println("Transformed "+classFile);
+			} catch (Exception e) {
+				System.err.println("Failed to transform " + classFile.getAbsolutePath() + " :\n\t" +e.getMessage());
+				failed = true;
+			}
+		}
+		if (failed) {
+//			throw new RuntimeException("FAILED");
 		}
 		System.out.println("Done.");
+		
 	}
 	
 	/**

@@ -76,7 +76,7 @@ tasks.withType(FindBugs) {
  // building the jar ---------------------
 jar {
     manifest {
-        attributes 'Main-Class': "Main",
+        attributes 'Main-Class': "dynslicer.Main",
                    'Class-Path': '.',
                    'Implementation-Title': 'DynSlicer',
                    'Implementation-Version': "$version"
