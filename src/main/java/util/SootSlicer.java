@@ -24,9 +24,11 @@ import soot.Local;
 import soot.LongType;
 import soot.Modifier;
 import soot.PatchingChain;
+import soot.PrimType;
 import soot.RefLikeType;
 import soot.Scene;
 import soot.SootClass;
+import soot.SootField;
 import soot.SootMethod;
 import soot.Unit;
 import soot.Value;
@@ -99,18 +101,18 @@ public class SootSlicer {
 		// System.err.println(ppt.a.name);
 		// }
 
-		//TODO: initialize all fields to default values.
-		
+		// TODO: initialize all fields to default values.
+
 		Iterator<Pair<PptTopLevel, ValueTuple>> iterator = trace.trace.iterator();
 		SootMethod sm = createTraceMethod(iterator, containingClass);
 		addFakeReturn(sm);
 		UnusedLocalEliminator.v().transform(sm.getActiveBody());
-//
-//		for (Unit u : sm.getActiveBody().getUnits()) {
-//			System.err.println("   " + u);
-//		}
+		//
+		// for (Unit u : sm.getActiveBody().getUnits()) {
+		// System.err.println(" " + u);
+		// }
 		sm.getActiveBody().validate();
-//		 System.err.println(".......");
+		// System.err.println(".......");
 	}
 
 	/**
@@ -121,20 +123,26 @@ public class SootSlicer {
 	private void addFakeReturn(SootMethod sm) {
 		if (sm.getReturnType() instanceof VoidType) {
 			sm.getActiveBody().getUnits().add(Jimple.v().newReturnVoidStmt());
-		} else if (sm.getReturnType() instanceof RefLikeType) {
-			sm.getActiveBody().getUnits().add(Jimple.v().newReturnStmt(NullConstant.v()));
-		} else if (sm.getReturnType() instanceof IntType) {
-			sm.getActiveBody().getUnits().add(Jimple.v().newReturnStmt(IntConstant.v(0)));
-		} else if (sm.getReturnType() instanceof LongType) {
-			sm.getActiveBody().getUnits().add(Jimple.v().newReturnStmt(LongConstant.v(0)));
-		} else if (sm.getReturnType() instanceof FloatType) {
-			sm.getActiveBody().getUnits().add(Jimple.v().newReturnStmt(FloatConstant.v(0)));
-		} else if (sm.getReturnType() instanceof DoubleType) {
-			sm.getActiveBody().getUnits().add(Jimple.v().newReturnStmt(DoubleConstant.v(0)));
-
+		} else if (sm.getReturnType() instanceof RefLikeType || sm.getReturnType() instanceof PrimType) {
+			sm.getActiveBody().getUnits().add(Jimple.v().newReturnStmt(getDefaultValue(sm.getReturnType())));
 		} else {
 			throw new RuntimeException("Not implemented for " + sm.getReturnType());
 		}
+	}
+
+	private Value getDefaultValue(soot.Type t) {
+		if (t instanceof RefLikeType) {
+			return NullConstant.v();
+		} else if (t instanceof IntType) {
+			return IntConstant.v(0);
+		} else if (t instanceof LongType) {
+			return LongConstant.v(0);
+		} else if (t instanceof FloatType) {
+			return FloatConstant.v(0);
+		} else if (t instanceof DoubleType) {
+			return DoubleConstant.v(0);
+		}
+		return IntConstant.v(0);
 	}
 
 	private Unit copySootStmt(Unit u, Map<Value, Value> substiutionMap) {
@@ -179,7 +187,6 @@ public class SootSlicer {
 
 		pcMethodStack.clear();
 
-
 		Pair<PptTopLevel, ValueTuple> ppt = iterator.next();
 		Verify.verify(ppt.a.name.endsWith(":::ENTER"), "Ppt is not a procedure entry: " + ppt.a.name);
 
@@ -192,8 +199,6 @@ public class SootSlicer {
 
 		enterMethod(ppt, methodStack, callStack, newBody, substiutionMap);
 
-		
-		
 		while (iterator.hasNext()) {
 			boolean exceptionalJump = false;
 			ppt = iterator.next();
@@ -220,7 +225,7 @@ public class SootSlicer {
 							sm = methodStack.peek();
 							body = sm.retrieveActiveBody();
 							exceptionalJump = true;
-						} else {							
+						} else {
 							return newMethod;
 						}
 					}
@@ -238,7 +243,7 @@ public class SootSlicer {
 
 				List<Integer> skipList = new LinkedList<Integer>();
 				Unit u = findUnitAtPos(body, arg, skipList);
-//System.err.println("  "+u);
+				// System.err.println(" "+u);
 				if (exceptionalJump) {
 					// get the caughtexceptionref
 					Unit pre = u;
@@ -411,6 +416,28 @@ public class SootSlicer {
 				}
 			}
 		}
+
+		// init all fields if its a constructor
+		if (sm.isConstructor()) {
+			for (SootField field : sm.getDeclaringClass().getFields()) {
+				if (!field.isStatic()) {
+					Value rhs = getDefaultValue(field.getType());
+					Value lhs = Jimple.v().newInstanceFieldRef(body.getThisLocal(), field.makeRef());
+					Unit init = Jimple.v().newAssignStmt(lhs, rhs);
+					newBody.getUnits().add(copySootStmt(init, substiutionMap));
+				}
+			}
+		} else if (sm.isStaticInitializer()) {
+			for (SootField field : sm.getDeclaringClass().getFields()) {
+				if (field.isStatic()) {
+					Value rhs = getDefaultValue(field.getType());
+					Value lhs = Jimple.v().newStaticFieldRef(field.makeRef());
+					Unit init = Jimple.v().newAssignStmt(lhs, rhs);
+					newBody.getUnits().add(copySootStmt(init, substiutionMap));
+				}
+			}			
+		}
+
 	}
 
 	private Unit findUnitAtPos(Body body, long pos, List<Integer> outSkipList) {
