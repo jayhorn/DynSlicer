@@ -24,10 +24,7 @@ import org.objectweb.asm.Opcodes;
  */
 public class InstrumentConditionals {
 
-	public static final String conditionalMethodName = "__CONDITION__METHOD";
-	public static final String conditionalMethodArgName = "arg";
-
-	public static final String pcMethodName = "__PC__METHOD";
+	public static final String pcMethodNameSuffix = "__PC__METHOD";
 	public static final String pcMethodArgName = "arg";
 
 	
@@ -71,7 +68,7 @@ public class InstrumentConditionals {
 			e.printStackTrace(System.err);
 		}
 	}
-
+	
 	static class ClassRewriter extends ClassVisitor implements Opcodes {
 
 		protected String className;
@@ -90,61 +87,59 @@ public class InstrumentConditionals {
 		@Override
 		public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {			
 			MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
-			return new MethodAdapter(mv, className);
+			final String pcMethodName = createProgramCounterMethod(name, desc);
+			return new MethodAdapter(mv, className, pcMethodName);
 		}
 
-		@Override
-		public void visitEnd() {
-			/*
-			 * create a method
-			 * public static boolean conditionalMethodName(boolean arg) {
-			 * return arg;
-			 * }
-			 * which is in bytecode:
-			 * public boolean conditionalMethodName(boolean);
-			 * descriptor: (Z)Z
-			 * flags: ACC_PUBLIC, ACC_STATIC
-			 * Code:
-			 * stack=1, locals=1, args_size=1
-			 * 0: iload_0
-			 * 1: ireturn
-			 * LineNumberTable:
-			 * line 50: 0
-			 * LocalVariableTable:
-			 * Start Length Slot Name Signature
-			 * 0 2 0 arg Z
-			 */
+//		@Override
+//		public void visitEnd() {
+//			
+//			//create empty method to sample instruction counter.
+//			Label endLabel = new Label();
+//			MethodVisitor mv = cv.visitMethod(ACC_PRIVATE | ACC_STATIC, pcMethodName, "(I)V", null, null);
+//			mv.visitInsn(RETURN);
+//			mv.visitMaxs(0, 1);
+//			mv.visitLabel(endLabel);
+//			mv.visitLocalVariable(pcMethodArgName, "I", null, new Label(), endLabel, 0);
+//			mv.visitEnd();
+//			super.visitEnd();
+//		}
+		
+		private String createProgramCounterMethod(String name, String desc) {
+			final String methodName = composePcMethodName(name, desc);			
 			Label endLabel = new Label();
-			MethodVisitor mv = cv.visitMethod(ACC_PUBLIC | ACC_STATIC, conditionalMethodName, "(Z)Z", null, null);
-			// create method body
-			mv.visitVarInsn(Opcodes.ILOAD, 0);
-			mv.visitInsn(IRETURN);
-			mv.visitMaxs(1, 1);
-			mv.visitLabel(endLabel);
-			mv.visitLocalVariable(conditionalMethodArgName, "Z", null, new Label(), endLabel, 0);
-			mv.visitEnd();
-			
-			//create empty method to sample instruction counter.
-			endLabel = new Label();
-			mv = cv.visitMethod(ACC_PRIVATE | ACC_STATIC, pcMethodName, "(I)V", null, null);
+			MethodVisitor mv = cv.visitMethod(ACC_PRIVATE | ACC_STATIC, methodName, "(I)V", null, null);
 			mv.visitInsn(RETURN);
 			mv.visitMaxs(0, 1);
 			mv.visitLabel(endLabel);
 			mv.visitLocalVariable(pcMethodArgName, "I", null, new Label(), endLabel, 0);
 			mv.visitEnd();
-			super.visitEnd();
+			return methodName;
 		}
 	}
-
+	
+	public static String composePcMethodName(String name, String desc) {
+		String cleanDesc = desc.replace("(", "_LP_").replace(")", "_RP_");
+		cleanDesc = cleanDesc.replace(";", "_sc_");
+		cleanDesc = cleanDesc.replace("[", "_lb_");
+		cleanDesc = cleanDesc.replace("/", "_sl_");
+		String cleanName = name.replace("<", "_la_");
+		cleanName = cleanName.replace(">", "_ra_");
+		return cleanName+"_SIG_"+cleanDesc+pcMethodNameSuffix;
+	}
+	
+	
+	
 	static class MethodAdapter extends MethodVisitor implements Opcodes {
 
 		private int instCounter = 0;
 		
-		protected final String className;
+		protected final String className, pcMethodName;
 		
-		public MethodAdapter(MethodVisitor mv, String className) {
+		public MethodAdapter(MethodVisitor mv, String className, String pcMethodName) {
 			super(ASM5, mv);			
 			this.className = className;
+			this.pcMethodName = pcMethodName;
 		}
 
 		private void sampleInstCounter() {

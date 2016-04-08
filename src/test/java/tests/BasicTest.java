@@ -23,7 +23,7 @@ public class BasicTest {
 		//check without args - should terminate immediately.
 		Main.main(new String[]{});
 
-		final File srcDir = new File("src/test/resources/test01/");
+		final File srcDir = new File("src/test/resources/test02/");
 		File classDir = null;
 		File testDir = null;
 		try {

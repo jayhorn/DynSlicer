@@ -54,9 +54,11 @@ import soot.jimple.ReturnVoidStmt;
 import soot.jimple.Stmt;
 import soot.jimple.SwitchStmt;
 import soot.jimple.ThisRef;
+import soot.jimple.ThrowStmt;
 import soot.options.Options;
 import soot.tagkit.SourceFileTag;
 import soot.tagkit.Tag;
+import soot.toolkits.scalar.UnusedLocalEliminator;
 import util.DaikonRunner.DaikonTrace;
 
 public class SootSlicer {
@@ -64,6 +66,7 @@ public class SootSlicer {
 	/**
 	 * Returns a soot class that contains one method per trace. Each method
 	 * contains the sequence of statements executed on that trace.
+	 * 
 	 * @param classDir
 	 * @param classPath
 	 * @param traces
@@ -71,38 +74,48 @@ public class SootSlicer {
 	 */
 	public SootClass computeErrorSlices(File classDir, String classPath, Collection<DaikonTrace> traces) {
 		loadSootScene(classDir, classPath);
-		
+
 		SootClass myClass = new SootClass("HelloWorld", Modifier.PUBLIC);
 		myClass.setSuperclass(Scene.v().getSootClass("java.lang.Object"));
 		Scene.v().addClass(myClass);
-		
+
 		for (DaikonTrace t : traces) {
 			computeErrorSlice(t, myClass);
 		}
-		
+
 		return myClass;
 	}
 
 	/**
-	 * For a given trace, create a method that contains the sequqnce of statements that are executed on that trace.
+	 * For a given trace, create a method that contains the sequqnce of
+	 * statements that are executed on that trace.
+	 * 
 	 * @param trace
 	 * @param containingClass
 	 */
 	public void computeErrorSlice(final DaikonTrace trace, final SootClass containingClass) {
 
+		// for (Pair<PptTopLevel, ValueTuple> ppt : trace.trace) {
+		// System.err.println(ppt.a.name);
+		// }
+
+		//TODO: initialize all fields to default values.
+		
 		Iterator<Pair<PptTopLevel, ValueTuple>> iterator = trace.trace.iterator();
 		SootMethod sm = createTraceMethod(iterator, containingClass);
 		addFakeReturn(sm);
-		
+		UnusedLocalEliminator.v().transform(sm.getActiveBody());
+//
 //		for (Unit u : sm.getActiveBody().getUnits()) {
 //			System.err.println("   " + u);
 //		}
 		sm.getActiveBody().validate();
-//		System.err.println(".......");
+//		 System.err.println(".......");
 	}
 
 	/**
 	 * Add a fake return statement to the end of a method.
+	 * 
 	 * @param sm
 	 */
 	private void addFakeReturn(SootMethod sm) {
@@ -123,13 +136,13 @@ public class SootSlicer {
 			throw new RuntimeException("Not implemented for " + sm.getReturnType());
 		}
 	}
-	
+
 	private Unit copySootStmt(Unit u, Map<Value, Value> substiutionMap) {
 		Unit ret = (Unit) u.clone();
 		for (ValueBox vb : ret.getUseAndDefBoxes()) {
-			if (substiutionMap.containsKey(vb.getValue())) {				
+			if (substiutionMap.containsKey(vb.getValue())) {
 				vb.setValue(substiutionMap.get(vb.getValue()));
-			} 
+			}
 		}
 		ret.addAllTagsOf(u);
 		for (Tag t : this.sm.getDeclaringClass().getTags()) {
@@ -142,10 +155,10 @@ public class SootSlicer {
 
 	private SootMethod createNewMethod(final SootMethod orig, final SootClass containingClass) {
 		final String method_prefix = "XY_";
-		SootMethod newMethod = new SootMethod(method_prefix+orig.getName(), orig.getParameterTypes(), orig.getReturnType(),
-				orig.getModifiers());
+		SootMethod newMethod = new SootMethod(method_prefix + orig.getName(), orig.getParameterTypes(),
+				orig.getReturnType(), orig.getModifiers());
 		containingClass.addMethod(newMethod);
-		JimpleBody newBody = Jimple.v().newBody(newMethod);		
+		JimpleBody newBody = Jimple.v().newBody(newMethod);
 		newMethod.setActiveBody(newBody);
 		return newMethod;
 	}
@@ -153,11 +166,19 @@ public class SootSlicer {
 	private SootMethod newMethod;
 	private SootMethod sm;
 	private Body body;
-	
-	private SootMethod createTraceMethod(Iterator<Pair<PptTopLevel, ValueTuple>> iterator, final SootClass containingClass) {
-//		final List<Unit> sootTrace = new LinkedList<Unit>();
+
+	final Stack<String> pcMethodStack = new Stack<String>();
+
+	private boolean haveToPushToPcStack = false;
+
+	private SootMethod createTraceMethod(Iterator<Pair<PptTopLevel, ValueTuple>> iterator,
+			final SootClass containingClass) {
+		// final List<Unit> sootTrace = new LinkedList<Unit>();
 		final Stack<SootMethod> methodStack = new Stack<SootMethod>();
 		final Stack<Unit> callStack = new Stack<Unit>();
+
+		pcMethodStack.clear();
+
 
 		Pair<PptTopLevel, ValueTuple> ppt = iterator.next();
 		Verify.verify(ppt.a.name.endsWith(":::ENTER"), "Ppt is not a procedure entry: " + ppt.a.name);
@@ -165,40 +186,102 @@ public class SootSlicer {
 		final Map<Value, Value> substiutionMap = new HashMap<Value, Value>();
 
 		sm = findMethodForPpt(ppt.a);
-		//TODO get the active body and start adding to it.
+		// TODO get the active body and start adding to it.
 		newMethod = createNewMethod(sm, containingClass);
 		final Body newBody = newMethod.getActiveBody();
 
 		enterMethod(ppt, methodStack, callStack, newBody, substiutionMap);
 
 		
+		
 		while (iterator.hasNext()) {
+			boolean exceptionalJump = false;
 			ppt = iterator.next();
-			if (ppt.a.name.contains(InstrumentConditionals.pcMethodName) && ppt.a.name.endsWith(":::ENTER")) {
+			if (ppt.a.name.contains(InstrumentConditionals.pcMethodNameSuffix) && ppt.a.name.endsWith(":::ENTER")) {
+				/**
+				 * =============================================================
+				 * ===
+				 * This part handles exceptional back jumps
+				 */
+				if (haveToPushToPcStack) {
+					pcMethodStack.push(ppt.a.name);
+					haveToPushToPcStack = false;
+				} else {
+					if (!pcMethodStack.isEmpty() && !ppt.a.name.equals(pcMethodStack.peek())) {
+						// then there was an exception and we have to pop stuff
+						// from our stacks until we have the right method again.
+						while (!pcMethodStack.isEmpty() && !ppt.a.name.equals(pcMethodStack.peek())) {
+							if (!callStack.isEmpty())
+								callStack.pop();
+							methodStack.pop();
+							pcMethodStack.pop();
+						}
+						if (!pcMethodStack.isEmpty()) {
+							sm = methodStack.peek();
+							body = sm.retrieveActiveBody();
+							exceptionalJump = true;
+						} else {							
+							return newMethod;
+						}
+					}
+				}
+				/**
+				 * =============================================================
+				 * ===
+				 */
+
 				VarInfo vi = ppt.a.find_var_by_name(InstrumentConditionals.pcMethodArgName);
 				long arg = (Long) ppt.b.getValueOrNull(vi);
 
 				// skip the exit of this method as well.
 				ppt = iterator.next();
-				
+
 				List<Integer> skipList = new LinkedList<Integer>();
-				Unit u = findUnitAtPos(body, arg, skipList);				
+				Unit u = findUnitAtPos(body, arg, skipList);
+//System.err.println("  "+u);
+				if (exceptionalJump) {
+					// get the caughtexceptionref
+					Unit pre = u;
+					while (pre != null) {
+						if (pre instanceof DefinitionStmt
+								&& ((DefinitionStmt) pre).getRightOp() instanceof CaughtExceptionRef) {
+							break;
+						}
+						pre = sm.getActiveBody().getUnits().getPredOf(pre);
+					}
+					if (pre != null) {
+						// check if the last element of the newbody is a throw.
+						// if so, remove it and use its op for the assignment
+						Unit last = newBody.getUnits().getLast();
+						newBody.getUnits().removeLast();
+						Unit newasn = null;
+						if (last instanceof ThrowStmt) {
+							newasn = Jimple.v().newAssignStmt(((DefinitionStmt) pre).getLeftOp(),
+									((ThrowStmt) last).getOp());
+						}
+						newBody.getUnits().add(copySootStmt(newasn, substiutionMap));
+					} else {
+						// TODO
+						System.err.println("No catch found for " + u + ". Guess we are done here.");
+						return newMethod;
+					}
+				}
+
 				if (u == null) {
 					// TODO:
 					continue;
 				}
 				for (ValueBox vb : u.getUseAndDefBoxes()) {
 					if (vb.getValue() instanceof FieldRef) {
-						if (!((FieldRef)vb.getValue()).getField().isPublic()) {
-							if (((FieldRef)vb.getValue()).getField().isStatic()) {
-								((FieldRef)vb.getValue()).getField().setModifiers(Modifier.PUBLIC | Modifier.STATIC);
+						if (!((FieldRef) vb.getValue()).getField().isPublic()) {
+							if (((FieldRef) vb.getValue()).getField().isStatic()) {
+								((FieldRef) vb.getValue()).getField().setModifiers(Modifier.PUBLIC | Modifier.STATIC);
 							} else {
-								((FieldRef)vb.getValue()).getField().setModifiers(Modifier.PUBLIC);
+								((FieldRef) vb.getValue()).getField().setModifiers(Modifier.PUBLIC);
 							}
 						}
 					}
-						
-							
+
 				}
 				if (u instanceof IfStmt || u instanceof SwitchStmt || u instanceof GotoStmt) {
 					// ignore
@@ -217,8 +300,8 @@ public class SootSlicer {
 						Unit callee = callStack.pop();
 						if (callee instanceof DefinitionStmt) {
 							DefinitionStmt call = (DefinitionStmt) callee;
-							newBody.getUnits().add(copySootStmt(Jimple.v().newAssignStmt(call.getLeftOp(), rstmt.getOp()),
-									substiutionMap));
+							newBody.getUnits().add(copySootStmt(
+									Jimple.v().newAssignStmt(call.getLeftOp(), rstmt.getOp()), substiutionMap));
 						} else {
 							newBody.getUnits().add(copySootStmt(u, substiutionMap));
 						}
@@ -228,18 +311,17 @@ public class SootSlicer {
 					if (ivk.getMethod().getDeclaringClass().isLibraryClass()
 							|| ivk.getMethod().getDeclaringClass().isJavaLibraryClass()) {
 						// do not try to inline library calls.
+						// TODO: instead, update the state depending on the
+						// delta between
+						// the previous state and the current state.
 						newBody.getUnits().add(copySootStmt(u, substiutionMap));
 					} else {
 						callStack.push(u);
 					}
 				} else {
-					if (u instanceof DefinitionStmt
-							&& ((DefinitionStmt) u).getRightOp() instanceof CaughtExceptionRef) {
-						throw new RuntimeException("Not implemented!");
-					} else {
-						newBody.getUnits().add(copySootStmt(u, substiutionMap));
-					}
+					newBody.getUnits().add(copySootStmt(u, substiutionMap));
 				}
+
 				for (int i : skipList) {
 					if (!iterator.hasNext()) {
 						// Then the trace just threw an exception and we're
@@ -247,25 +329,22 @@ public class SootSlicer {
 						return newMethod;
 					}
 					ppt = iterator.next();
-					Verify.verify(ppt.a.name.contains(InstrumentConditionals.pcMethodName)
+					Verify.verify(ppt.a.name.contains(InstrumentConditionals.pcMethodNameSuffix)
 							&& ppt.a.name.endsWith(":::ENTER"));
 					vi = ppt.a.find_var_by_name(InstrumentConditionals.pcMethodArgName);
 					arg = (Long) ppt.b.getValueOrNull(vi);
 					Verify.verify(arg == (long) i, "Wrong number " + arg + "!=" + i);
 					ppt = iterator.next();
-					Verify.verify(
-							ppt.a.name.contains(InstrumentConditionals.pcMethodName) && ppt.a.name.contains(":::EXIT"));
+					Verify.verify(ppt.a.name.contains(InstrumentConditionals.pcMethodNameSuffix)
+							&& ppt.a.name.contains(":::EXIT"));
 				}
-			} else if (ppt.a.name.contains(InstrumentConditionals.conditionalMethodName)
-					&& ppt.a.name.endsWith(":::ENTER")) {
-				// skip the exit of this method as well.
-				ppt = iterator.next();
 			} else if (ppt.a.name.endsWith(":::ENTER")) {
 				enterMethod(ppt, methodStack, callStack, newBody, substiutionMap);
 			} else if (ppt.a.name.contains(":::EXIT")) {
 				methodStack.pop();
 				sm = methodStack.peek();
 				body = sm.retrieveActiveBody();
+				pcMethodStack.pop();
 			} else {
 				System.err.println("Don't know how to handle " + ppt.a.name);
 			}
@@ -291,20 +370,21 @@ public class SootSlicer {
 	// return null;
 	// }
 
-	private void enterMethod(Pair<PptTopLevel, ValueTuple> ppt, final Stack<SootMethod> methodStack, final Stack<Unit> callStack, Body newBody, final Map<Value, Value> substiutionMap) {
+	private void enterMethod(Pair<PptTopLevel, ValueTuple> ppt, final Stack<SootMethod> methodStack,
+			final Stack<Unit> callStack, Body newBody, final Map<Value, Value> substiutionMap) {
 		sm = findMethodForPpt(ppt.a);
 		body = sm.retrieveActiveBody();
 		methodStack.push(sm);
-		
-		//Add all the locals from sm to newMethod
+		haveToPushToPcStack = true;
+		// Add all the locals from sm to newMethod
 		for (Local l : body.getLocals()) {
 			if (!substiutionMap.containsKey(l)) {
-				Local newLocal = Jimple.v().newLocal(sm.getName()+"_"+l.getName(), l.getType());
-				substiutionMap.put(l, newLocal);						
-				newMethod.getActiveBody().getLocals().add(newLocal);						
+				Local newLocal = Jimple.v().newLocal(sm.getName() + "_" + l.getName(), l.getType());
+				substiutionMap.put(l, newLocal);
+				newMethod.getActiveBody().getLocals().add(newLocal);
 			}
 		}
-		
+
 		// Add the IdentityStmts that assign Parameters to Locals
 		// because those do not show up on the trace otherwise.
 		for (Unit u : body.getUnits()) {
@@ -322,8 +402,7 @@ public class SootSlicer {
 				}
 			} else if (u instanceof IdentityStmt && ((IdentityStmt) u).getRightOp() instanceof ThisRef) {
 				IdentityStmt idStmt = (IdentityStmt) u;
-				if (!callStack.isEmpty()
-						&& ((Stmt) callStack.peek()).getInvokeExpr() instanceof InstanceInvokeExpr) {
+				if (!callStack.isEmpty() && ((Stmt) callStack.peek()).getInvokeExpr() instanceof InstanceInvokeExpr) {
 					InstanceInvokeExpr ivk = (InstanceInvokeExpr) ((Stmt) callStack.peek()).getInvokeExpr();
 					Stmt s = Jimple.v().newAssignStmt(idStmt.getLeftOp(), ivk.getBase());
 					newBody.getUnits().add(copySootStmt(s, substiutionMap));
@@ -331,9 +410,9 @@ public class SootSlicer {
 					newBody.getUnits().add(copySootStmt(u, substiutionMap));
 				}
 			}
-		}		
+		}
 	}
-	
+
 	private Unit findUnitAtPos(Body body, long pos, List<Integer> outSkipList) {
 		PatchingChain<Unit> units = body.getUnits();
 		Unit ret = null;
@@ -360,7 +439,7 @@ public class SootSlicer {
 	private boolean isPcMethod(Unit u) {
 		if (u instanceof InvokeStmt) {
 			InvokeStmt ivk = (InvokeStmt) u;
-			return ivk.getInvokeExpr().getMethod().getName().equals(InstrumentConditionals.pcMethodName);
+			return ivk.getInvokeExpr().getMethod().getName().contains(InstrumentConditionals.pcMethodNameSuffix);
 		}
 		return false;
 	}
@@ -387,10 +466,10 @@ public class SootSlicer {
 		sootOpt.set_keep_line_number(true);
 		sootOpt.set_prepend_classpath(true); // -pp
 		sootOpt.set_output_format(Options.output_format_class);
-//		sootOpt.set_java_version(Options.java_version_1_7);
+		// sootOpt.set_java_version(Options.java_version_1_7);
 		sootOpt.set_soot_classpath(classPath);
 		sootOpt.set_src_prec(Options.src_prec_class);
-//		sootOpt.set_asm_backend(true);
+		// sootOpt.set_asm_backend(true);
 		List<String> processDirs = new LinkedList<String>();
 		processDirs.add(classDir.getAbsolutePath());
 		sootOpt.set_process_dir(processDirs);
