@@ -16,7 +16,6 @@ public class TestClass02 {
 	String s;
 	
 	public int test01(int x) {
-		s=null;
 		try {
 			s= foo(x);
 		} catch (Throwable e) {
