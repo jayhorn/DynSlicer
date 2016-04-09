@@ -15,7 +15,6 @@ import daikon.PptTopLevel;
 import daikon.ValueTuple;
 import daikon.VarInfo;
 import daikon.util.Pair;
-import dynslicer.InstrumentConditionals;
 import soot.Body;
 import soot.DoubleType;
 import soot.FloatType;
@@ -64,6 +63,8 @@ import soot.toolkits.scalar.UnusedLocalEliminator;
 import util.DaikonRunner.DaikonTrace;
 
 public class SootSlicer {
+	public static final String pcMethodNameSuffix = "__PC__METHOD";
+	public static final String pcMethodArgName = "arg";
 
 	/**
 	 * Returns a soot class that contains one method per trace. Each method
@@ -202,7 +203,7 @@ public class SootSlicer {
 		while (iterator.hasNext()) {
 			boolean exceptionalJump = false;
 			ppt = iterator.next();
-			if (ppt.a.name.contains(InstrumentConditionals.pcMethodNameSuffix) && ppt.a.name.endsWith(":::ENTER")) {
+			if (ppt.a.name.contains(pcMethodNameSuffix) && ppt.a.name.endsWith(":::ENTER")) {
 				/**
 				 * =============================================================
 				 * ===
@@ -235,7 +236,7 @@ public class SootSlicer {
 				 * ===
 				 */
 
-				VarInfo vi = ppt.a.find_var_by_name(InstrumentConditionals.pcMethodArgName);
+				VarInfo vi = ppt.a.find_var_by_name(pcMethodArgName);
 				long arg = (Long) ppt.b.getValueOrNull(vi);
 
 				// skip the exit of this method as well.
@@ -334,13 +335,13 @@ public class SootSlicer {
 						return newMethod;
 					}
 					ppt = iterator.next();
-					Verify.verify(ppt.a.name.contains(InstrumentConditionals.pcMethodNameSuffix)
+					Verify.verify(ppt.a.name.contains(pcMethodNameSuffix)
 							&& ppt.a.name.endsWith(":::ENTER"));
-					vi = ppt.a.find_var_by_name(InstrumentConditionals.pcMethodArgName);
+					vi = ppt.a.find_var_by_name(pcMethodArgName);
 					arg = (Long) ppt.b.getValueOrNull(vi);
 					Verify.verify(arg == (long) i, "Wrong number " + arg + "!=" + i);
 					ppt = iterator.next();
-					Verify.verify(ppt.a.name.contains(InstrumentConditionals.pcMethodNameSuffix)
+					Verify.verify(ppt.a.name.contains(pcMethodNameSuffix)
 							&& ppt.a.name.contains(":::EXIT"));
 				}
 			} else if (ppt.a.name.endsWith(":::ENTER")) {
@@ -466,7 +467,7 @@ public class SootSlicer {
 	private boolean isPcMethod(Unit u) {
 		if (u instanceof InvokeStmt) {
 			InvokeStmt ivk = (InvokeStmt) u;
-			return ivk.getInvokeExpr().getMethod().getName().contains(InstrumentConditionals.pcMethodNameSuffix);
+			return ivk.getInvokeExpr().getMethod().getName().contains(pcMethodNameSuffix);
 		}
 		return false;
 	}

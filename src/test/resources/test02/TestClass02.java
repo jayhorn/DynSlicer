@@ -19,7 +19,7 @@ public class TestClass02 {
 		try {
 			s= foo(x);
 		} catch (Throwable e) {
-			e.printStackTrace();
+//			e.printStackTrace();
 		}
 		return s.length();
 	}

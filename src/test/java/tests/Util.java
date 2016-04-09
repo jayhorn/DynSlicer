@@ -59,14 +59,13 @@ public class Util {
 		 *         fails.
 		 * @throws IOException
 		 */
-		public static File compileJavaFiles(File[] sourceFiles, String classPath) throws IOException {
-			final File tempDir = Files.createTempDir();
+		public static void compileJavaFiles(File[] sourceFiles, String classPath, File outDir) throws IOException {			
 			StringBuilder sb = new StringBuilder();
 			for (File f : sourceFiles) {
 				sb.append(f.getAbsolutePath());
 				sb.append(" ");
 			}
-			final String javac_command = String.format("javac -g -cp %s -d %s %s", classPath, tempDir.getAbsolutePath(), sb.toString());
+			final String javac_command = String.format("javac -g -cp %s -d %s %s", classPath, outDir.getAbsolutePath(), sb.toString());
 
 			System.out.println(javac_command);
 
@@ -79,18 +78,21 @@ public class Util {
 				p.waitFor();
 			} catch (InterruptedException e) {
 				e.printStackTrace();
-				return null;
 			}
+		}
 
+		public static File compileJavaFiles(File sourceDir, String classPath) throws IOException {
+			final File tempDir = Files.createTempDir();
+			compileJavaFiles(sourceDir, classPath, tempDir);
 			return tempDir;
 		}
 		
-		public static File compileJavaFiles(File sourceDir, String classPath) throws IOException {
+		public static void compileJavaFiles(File sourceDir, String classPath, File outDir) throws IOException {
 			List<File> srcFiles = new LinkedList<File>();
 			for (Iterator<File> iter = FileUtils.iterateFiles(sourceDir, new String[] { "java" }, true); iter
 			.hasNext();) {
 				srcFiles.add(iter.next());
-			}
-			return compileJavaFiles(srcFiles.toArray(new File[srcFiles.size()]), classPath);
+			}			
+			compileJavaFiles(srcFiles.toArray(new File[srcFiles.size()]), classPath, outDir);
 		}
 }

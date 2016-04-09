@@ -15,6 +15,7 @@ import daikon.PptMap;
 import daikon.PptTopLevel;
 import daikon.ValueTuple;
 import daikon.util.Pair;
+import dynslicer.Main;
 
 /**
  * @author schaef
@@ -27,7 +28,7 @@ public class DaikonRunner extends AbstractRunner {
 		List<String> cmd = new LinkedList<String>();
 		cmd.add("java");
 		cmd.add("-classpath");
-		cmd.add(classPath + File.pathSeparator + "lib/daikon.jar");
+		cmd.add(classPath + File.pathSeparator + Main.basePath+"lib/daikon.jar");
 		cmd.add("daikon.Chicory");
 		cmd.add(mainClass);
 		execute(cmd);
@@ -36,7 +37,7 @@ public class DaikonRunner extends AbstractRunner {
 		cmd = new LinkedList<String>();
 		cmd.add("gunzip");
 		cmd.add("-f");
-		cmd.add(mainClass + ".dtrace.gz");
+		cmd.add(Main.basePath+mainClass + ".dtrace.gz");
 		execute(cmd);
 
 		return parseDTraceFile(mainClass + ".dtrace");
@@ -69,15 +70,12 @@ public class DaikonRunner extends AbstractRunner {
 			FileIO.compute_orig_variables(ppt, vt.vals, vt.mods, nonce);
 			FileIO.compute_derived_variables(ppt, vt.vals, vt.mods);
 			// Intern the sample, to save space, since we are storing them all.
-			vt = new ValueTuple(vt.vals, vt.mods);
-			
+			vt = new ValueTuple(vt.vals, vt.mods);			
 			final String enterTestRegex = "ErrorTest(\\d)+\\.test(\\d)+\\(\\):::ENTER";			
 			if (ppt.name().matches(enterTestRegex)) {
-				if (currentTrace!=null) {
-					traces.add(currentTrace);
-				} 
 				currentTrace = new DaikonTrace();
 				currentTrace.addPoint(ppt, vt);
+				traces.add(currentTrace);
 			} else if (currentTrace!=null) {
 				currentTrace.addPoint(ppt, vt);
 			}

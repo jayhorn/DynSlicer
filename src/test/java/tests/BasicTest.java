@@ -24,24 +24,28 @@ public class BasicTest {
 		Main.main(new String[]{});
 
 		final File srcDir = new File("src/test/resources/test02/");
-		File classDir = null;
-		File testDir = null;
+		File classDir = new File("classes_and_tests");
+		if (classDir.exists()) {
+			FileUtils.deleteDirectory(classDir); 
+		}
+		Assert.assertTrue(classDir.mkdir());
+		
 		try {
 			System.out.println("Create temp dir");
-			testDir = new File("slicerData");
+			File testDir = new File("slicerData");
 			if (testDir.exists()) {
 				FileUtils.deleteDirectory(testDir); 
 			}
 			Assert.assertTrue(testDir.mkdir());
 			System.out.println("Compile source");
-			classDir = Util.compileJavaFiles(srcDir, ".");
+			Util.compileJavaFiles(srcDir, ".", classDir);
 			System.out.println("Run Main");
 			Main.main(new String[]{".", classDir.getAbsolutePath(), testDir.getAbsolutePath()});
 			System.out.println("Clean up");
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
-			FileUtils.deleteDirectory(classDir); 			
+//			FileUtils.deleteDirectory(classDir); 			
 		}
 		Assert.assertTrue(true);
 	}
