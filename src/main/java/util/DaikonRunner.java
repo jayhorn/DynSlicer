@@ -69,15 +69,12 @@ public class DaikonRunner extends AbstractRunner {
 			FileIO.compute_orig_variables(ppt, vt.vals, vt.mods, nonce);
 			FileIO.compute_derived_variables(ppt, vt.vals, vt.mods);
 			// Intern the sample, to save space, since we are storing them all.
-			vt = new ValueTuple(vt.vals, vt.mods);
-			
+			vt = new ValueTuple(vt.vals, vt.mods);			
 			final String enterTestRegex = "ErrorTest(\\d)+\\.test(\\d)+\\(\\):::ENTER";			
 			if (ppt.name().matches(enterTestRegex)) {
-				if (currentTrace!=null) {
-					traces.add(currentTrace);
-				} 
 				currentTrace = new DaikonTrace();
 				currentTrace.addPoint(ppt, vt);
+				traces.add(currentTrace);
 			} else if (currentTrace!=null) {
 				currentTrace.addPoint(ppt, vt);
 			}

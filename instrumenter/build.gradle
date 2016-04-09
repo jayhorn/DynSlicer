@@ -1,0 +1,51 @@
+apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'findbugs'
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '2.3'
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+    compile 'org.apache.commons:commons-lang3:3.4'
+    compile 'commons-io:commons-io:2.4'
+    compile 'com.google.guava:guava:19.0'
+    compile 'org.ow2.asm:asm:5.1'
+    compile 'org.ow2.asm:asm-util:5.1'
+    
+	compile 'junit:junit:4.12'
+
+    testCompile 'junit:junit:4.12'
+}
+
+tasks.withType(JavaCompile) {
+    options.compilerArgs << "-Xlint:deprecation"
+    options.compilerArgs << "-Werror"
+}
+
+// testing related activities -----------------
+tasks.withType(FindBugs) {
+    effort = "default"
+    reportLevel = "medium"
+
+    reports {
+        xml.enabled = false
+        html.enabled = true
+    }
+ }
+ 
+ // building the jar ---------------------
+jar {
+    manifest {
+        attributes 'Main-Class': "bc_instrumenter.Main",
+                   'Class-Path': '.',
+                   'Implementation-Title': 'Instrumenter',
+                   'Implementation-Version': "$version"
+    }
+
+    from configurations.compile.collect { it.isDirectory() ? it : zipTree(it) }
+}

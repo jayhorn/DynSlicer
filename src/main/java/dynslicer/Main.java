@@ -17,11 +17,10 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.objectweb.asm.ClassReader;
 
-import soot.SootClass;
 import util.DaikonRunner;
 import util.DaikonRunner.DaikonTrace;
+import util.InstrumentationRunner;
 import util.RandoopRunner;
-import util.SootSlicer;
 
 public class Main {
 
@@ -37,10 +36,11 @@ public class Main {
 		Set<String> classes = getClasses(classDir);
 		// run randoop
 		File classListFile = null;
+		final String randoopClassPath = classPath + File.pathSeparator + classDir;
 		try {
 			classListFile = createClassListFile(classes);
 			RandoopRunner rr = new RandoopRunner();
-			rr.run(classPath + File.pathSeparator + classDir, classListFile, new File(classDir), 5, 10);
+			rr.run(randoopClassPath, classListFile, new File(classDir), 1, 2);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
@@ -49,8 +49,13 @@ public class Main {
 			}
 		}
 		
-		InstrumentConditionals icond = new InstrumentConditionals();
-		icond.transformAllClasses(new File(classDir), testDir);
+		System.out.println("Transforming class files");
+		InstrumentationRunner ir = new InstrumentationRunner();
+		ir.run(classDir, testDir.getAbsolutePath(), randoopClassPath);
+		System.out.println("Transformation done.");
+		
+//		InstrumentConditionals icond = new InstrumentConditionals();
+//		icond.transformAllClasses(new File(classDir), testDir);
 
 		DaikonRunner dr = new DaikonRunner();
 		List<String> cp = new LinkedList<String>();
@@ -60,13 +65,15 @@ public class Main {
 		final String daikonClassPath = StringUtils.join(cp, File.pathSeparator);
 		Set<DaikonTrace> traces = dr.run(daikonClassPath, "ErrorTestDriver");
 
+		System.err.println("Number of Traces " + traces.size());
+		
 		// compute the slices and run the fault localization:
 		
-		SootSlicer ss = new SootSlicer();
-		SootClass traceClass = ss.computeErrorSlices(testDir, classPath+File.pathSeparator+"lib/junit.jar", traces);
-		
-		GroupTraces gt = new GroupTraces();
-		gt.groupStuff(traceClass);
+//		SootSlicer ss = new SootSlicer();
+//		SootClass traceClass = ss.computeErrorSlices(testDir, classPath+File.pathSeparator+"lib/junit.jar", traces);
+//		
+//		GroupTraces gt = new GroupTraces();
+//		gt.groupStuff(traceClass);
 	}
 
 	private static File createClassListFile(Set<String> classes) throws IOException {
