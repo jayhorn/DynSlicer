@@ -28,7 +28,7 @@ def source_path(javac_command):
   return None
 
 def run_cmd(cmd):
-  print ("Running %s" % cmd)
+  print ("Running %s" % (" ".join(cmd)))
   try:
       print (subprocess.check_output(cmd, stderr=subprocess.STDOUT))
   except:

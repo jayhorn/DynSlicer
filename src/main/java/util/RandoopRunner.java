@@ -10,6 +10,8 @@ import java.util.List;
 
 import org.apache.commons.io.FileUtils;
 
+import dynslicer.Main;
+
 /**
  * @author schaef
  *
@@ -32,7 +34,7 @@ public class RandoopRunner extends AbstractRunner{
 		cmd.add("java");
 		cmd.add("-ea");
 		cmd.add("-classpath");
-		cmd.add(classPath+File.pathSeparator+"lib/randoop.jar");
+		cmd.add(classPath+File.pathSeparator+Main.basePath+"lib/randoop.jar");
 		cmd.add("randoop.main.Main");
 		cmd.add("gentests");
 		cmd.add("--classlist="+classListFile.getAbsolutePath());
@@ -54,7 +56,7 @@ public class RandoopRunner extends AbstractRunner{
 		cmd.add("javac");
 		cmd.add("-g");
 		cmd.add("-classpath");
-		cmd.add(classPath+File.pathSeparator+"lib/junit.jar");
+		cmd.add(classPath+File.pathSeparator+Main.basePath+"lib/junit.jar");
 		
 		for (Iterator<File> iter = FileUtils.iterateFiles(testDir, new String[] { "java" }, true); iter
 		.hasNext();) {

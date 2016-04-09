@@ -15,6 +15,7 @@ import daikon.PptMap;
 import daikon.PptTopLevel;
 import daikon.ValueTuple;
 import daikon.util.Pair;
+import dynslicer.Main;
 
 /**
  * @author schaef
@@ -27,7 +28,7 @@ public class DaikonRunner extends AbstractRunner {
 		List<String> cmd = new LinkedList<String>();
 		cmd.add("java");
 		cmd.add("-classpath");
-		cmd.add(classPath + File.pathSeparator + "lib/daikon.jar");
+		cmd.add(classPath + File.pathSeparator + Main.basePath+"lib/daikon.jar");
 		cmd.add("daikon.Chicory");
 		cmd.add(mainClass);
 		execute(cmd);
@@ -36,7 +37,7 @@ public class DaikonRunner extends AbstractRunner {
 		cmd = new LinkedList<String>();
 		cmd.add("gunzip");
 		cmd.add("-f");
-		cmd.add(mainClass + ".dtrace.gz");
+		cmd.add(Main.basePath+mainClass + ".dtrace.gz");
 		execute(cmd);
 
 		return parseDTraceFile(mainClass + ".dtrace");

@@ -24,8 +24,10 @@ import util.RandoopRunner;
 
 public class Main {
 
+	public static String basePath = "./";
+	
 	public static void main(String[] args) {
-		if (args.length != 3) {
+		if (args.length < 3) {
 			System.err.println("use with classpath, classdir, and testDir as arguments.");
 			return;
 		}
@@ -33,6 +35,10 @@ public class Main {
 		final String classDir = args[1];
 		final File testDir = new File(args[2]);
 
+		if (args.length == 4) {
+			basePath = args[3];
+		}
+		
 		Set<String> classes = getClasses(classDir);
 		// run randoop
 		File classListFile = null;

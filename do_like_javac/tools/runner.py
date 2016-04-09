@@ -27,7 +27,12 @@ def run(args, javac_commands, jars):
   for jc in javac_commands:
     javac_switches = jc['javac_switches']
 
-    cmd = dyntrace_command + [common.classpath(jc), common.class_directory(jc), args.out_dir]
+    current_dir = os.path.dirname(os.path.realpath(__file__))
+    current_dir = os.path.join(current_dir, os.pardir)
+    current_dir = os.path.join(current_dir, os.pardir)
+    current_dir += "/"
+    print (current_dir)
+    cmd = dyntrace_command + [common.classpath(jc), common.class_directory(jc), args.out_dir, current_dir]
 
     common.run_cmd(cmd)
     i = i + 1
