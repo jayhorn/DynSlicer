@@ -58,10 +58,16 @@ public class RandoopRunner extends AbstractRunner{
 		cmd.add("-classpath");
 		cmd.add(classPath+File.pathSeparator+Main.basePath+"lib/junit.jar");
 		
+		int generatedFileCount = 0;
 		for (Iterator<File> iter = FileUtils.iterateFiles(testDir, new String[] { "java" }, true); iter
 		.hasNext();) {
 			File testSrcFile = iter.next();
 			cmd.add(testSrcFile.getAbsolutePath());
+			generatedFileCount++;
+		}
+		
+		if (generatedFileCount==0) {
+			throw new RuntimeException("Randoop did not generate any tests. Aborting.");
 		}
 		
 		cmd.add("-d");

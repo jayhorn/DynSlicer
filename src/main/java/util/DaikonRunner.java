@@ -30,14 +30,15 @@ public class DaikonRunner extends AbstractRunner {
 		cmd.add("-classpath");
 		cmd.add(classPath + File.pathSeparator + Main.basePath+"lib/daikon.jar");
 		cmd.add("daikon.Chicory");
+		cmd.add("--ppt-omit-pattern=soot");
 		cmd.add(mainClass);
 		execute(cmd);
-
+		
 		// gunzip the dtrace file
 		cmd = new LinkedList<String>();
 		cmd.add("gunzip");
 		cmd.add("-f");
-		cmd.add(Main.basePath+mainClass + ".dtrace.gz");
+		cmd.add(mainClass + ".dtrace.gz");
 		execute(cmd);
 
 		return parseDTraceFile(mainClass + ".dtrace");

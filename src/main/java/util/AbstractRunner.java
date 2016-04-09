@@ -11,6 +11,7 @@ public abstract class AbstractRunner {
 
 	protected void execute(List<String> cmd) {
 		execute(cmd, DEFAULT_TIMEOUT);
+		System.out.println("Completed.");
 	}
 
 	protected void execute(List<String> cmd, long ms_timeout) {

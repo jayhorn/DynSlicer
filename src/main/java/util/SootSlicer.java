@@ -16,6 +16,7 @@ import daikon.ValueTuple;
 import daikon.VarInfo;
 import daikon.util.Pair;
 import soot.Body;
+import soot.CharType;
 import soot.DoubleType;
 import soot.FloatType;
 import soot.IntType;
@@ -109,9 +110,9 @@ public class SootSlicer {
 		addFakeReturn(sm);
 		UnusedLocalEliminator.v().transform(sm.getActiveBody());
 		//
-		// for (Unit u : sm.getActiveBody().getUnits()) {
-		// System.err.println(" " + u);
-		// }
+//		 for (Unit u : sm.getActiveBody().getUnits()) {
+//		 System.err.println(" " + u);
+//		 }
 		sm.getActiveBody().validate();
 		// System.err.println(".......");
 	}
@@ -473,8 +474,8 @@ public class SootSlicer {
 	}
 
 	private SootMethod findMethodForPpt(PptTopLevel ppt) {
-		String qualifiedMethodName = ppt.name.substring(0, ppt.name.indexOf("("));
-		String className = qualifiedMethodName.substring(0, qualifiedMethodName.lastIndexOf('.'));
+		final String qualifiedMethodName = ppt.name.substring(0, ppt.name.indexOf("("));
+		final String className = qualifiedMethodName.substring(0, qualifiedMethodName.lastIndexOf('.'));
 		String methodName = qualifiedMethodName.substring(qualifiedMethodName.lastIndexOf('.') + 1,
 				qualifiedMethodName.length());
 
@@ -483,13 +484,44 @@ public class SootSlicer {
 			// constructor call.
 			methodName = "<init>";
 		}
+		
+		
 
-		SootMethod sm = sc.getMethodByName(methodName);
-
+		final String paramSig = ppt.name.substring(ppt.name.indexOf("(")+1,ppt.name.indexOf(":::")-1).replace(" ", "");		
+		List<soot.Type> paramTypes = new LinkedList<soot.Type>(); 
+		if (paramSig!=null && paramSig.length()>0) {
+			for (String paramName : paramSig.split(",")) {
+				soot.Type t = stringToType(paramName);
+				paramTypes.add(t);
+			}
+		}				
+		SootMethod sm = sc.getMethod(methodName, paramTypes);
 		return sm;
 	}
 
+	private soot.Type stringToType(String s) {
+		soot.Type t;
+		if (s.endsWith("[]")) {
+			return stringToType(s.substring(0, s.length()-2)).makeArrayType();
+		}
+		if ("int".equals(s)) {
+			t = IntType.v();
+		} else if ("float".equals(s)) {
+			t = FloatType.v();
+		} else if ("double".equals(s)) {
+			t = DoubleType.v();
+		} else if ("long".equals(s)) {
+			t = LongType.v();
+		} else if ("char".equals(s)) {
+			t = CharType.v();
+		} else {
+			t = Scene.v().getRefType(s);
+		}
+		return t;
+	}
+	
 	private void loadSootScene(File classDir, String classPath) {
+		System.out.println("Running soot with classpath: " + classPath);
 		Options sootOpt = Options.v();
 		sootOpt.set_keep_line_number(true);
 		sootOpt.set_prepend_classpath(true); // -pp
