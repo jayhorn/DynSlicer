@@ -17,10 +17,12 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.objectweb.asm.ClassReader;
 
+import soot.SootClass;
 import util.DaikonRunner;
 import util.DaikonRunner.DaikonTrace;
 import util.InstrumentationRunner;
 import util.RandoopRunner;
+import util.SootSlicer;
 
 public class Main {
 
@@ -66,7 +68,7 @@ public class Main {
 		DaikonRunner dr = new DaikonRunner();
 		List<String> cp = new LinkedList<String>();
 		cp.add(classPath);
-		cp.add("lib/daikon.jar");
+		cp.add(basePath+"lib/daikon.jar");
 		cp.add(testDir.getAbsolutePath());		
 		final String daikonClassPath = StringUtils.join(cp, File.pathSeparator);
 		Set<DaikonTrace> traces = dr.run(daikonClassPath, "ErrorTestDriver");
@@ -75,11 +77,11 @@ public class Main {
 		
 		// compute the slices and run the fault localization:
 		
-//		SootSlicer ss = new SootSlicer();
-//		SootClass traceClass = ss.computeErrorSlices(testDir, classPath+File.pathSeparator+"lib/junit.jar", traces);
-//		
-//		GroupTraces gt = new GroupTraces();
-//		gt.groupStuff(traceClass);
+		SootSlicer ss = new SootSlicer();
+		SootClass traceClass = ss.computeErrorSlices(testDir, classPath+File.pathSeparator+basePath+"lib/junit.jar", traces);
+		
+		GroupTraces gt = new GroupTraces();
+		gt.groupStuff(traceClass);
 	}
 
 	private static File createClassListFile(Set<String> classes) throws IOException {

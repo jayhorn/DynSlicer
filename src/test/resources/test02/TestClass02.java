@@ -10,12 +10,16 @@ package test02;
 public class TestClass02 {
 
 	public static void main(String[] args) {
-		new TestClass02().test01(1);
+		new TestClass02().test01(1, "");
 	}
 	
 	String s;
 	
-	public int test01(int x) {
+//	public int test01(int x, String s) { 
+//		return test01(x);
+//	}
+	
+	public int test01(int x, String str) {
 		try {
 			s= foo(x);
 		} catch (Throwable e) {
