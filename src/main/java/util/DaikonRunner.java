@@ -30,7 +30,8 @@ public class DaikonRunner extends AbstractRunner {
 		cmd.add("-classpath");
 		cmd.add(classPath + File.pathSeparator + Main.basePath+"lib/daikon.jar");
 		cmd.add("daikon.Chicory");
-		cmd.add("--ppt-omit-pattern=soot");
+		
+//		cmd.add("--dtrace-file=ErrorTestDriver.dtrace");
 		cmd.add(mainClass);
 		execute(cmd);
 		
@@ -44,7 +45,7 @@ public class DaikonRunner extends AbstractRunner {
 		return parseDTraceFile(mainClass + ".dtrace");
 	}
 
-	protected Set<DaikonTrace> parseDTraceFile(String dtraceFileName) {
+	public Set<DaikonTrace> parseDTraceFile(String dtraceFileName) {
 		CollectDataProcessor processor = new CollectDataProcessor();
 		PptMap ppts = new PptMap();
 		try {

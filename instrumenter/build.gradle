@@ -16,6 +16,7 @@ dependencies {
     compile 'com.google.guava:guava:19.0'
     compile 'org.ow2.asm:asm:5.1'
     compile 'org.ow2.asm:asm-util:5.1'
+    compile 'org.ow2.asm:asm-debug-all:5.1'
     
 	compile 'junit:junit:4.12'
 

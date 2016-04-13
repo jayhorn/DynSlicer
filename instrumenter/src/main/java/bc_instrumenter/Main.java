@@ -7,11 +7,20 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
+import org.apache.commons.io.FileUtils;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.ClassWriter;
@@ -19,8 +28,10 @@ import org.objectweb.asm.Handle;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.util.CheckClassAdapter;
 
-import org.apache.commons.io.FileUtils;
+import com.google.common.base.Verify;
+
 /**
  * @author schaef
  *
@@ -28,29 +39,38 @@ import org.apache.commons.io.FileUtils;
 public class Main {
 
 	public static void main(String[] args) {
-		if (args.length!=2) {
+		if (args.length != 2) {
 			System.out.println("Usage: classDir outDir");
 			return;
 		}
 		File classDir = new File(args[0]);
 		File outDir = new File(args[1]);
-		
+
 		Main m = new Main();
 		m.transformAllClasses(classDir, outDir);
 	}
-	
+
 	public static final String pcMethodNameSuffix = "__PC__METHOD";
 	public static final String pcMethodArgName = "arg";
 
+	public static final String wrapperMethodNameSuffix = "__WRAPPER__METHOD";
+	
+	public static final String instanceWrapperSuffix = "__HASBASE__";
+
+	protected static Set<String> applicationClassNames;
+
 	public void transformAllClasses(File classDir, File outDir) {
+		applicationClassNames = new LinkedHashSet<String>();
 		boolean failed = false;
+		// Load all classes in the classDir and remember their name.
 		try (URLClassLoader cl = new URLClassLoader(new URL[] { classDir.toURI().toURL() });) {
 			for (Iterator<File> iter = FileUtils.iterateFiles(classDir, new String[] { "class" }, true); iter
 					.hasNext();) {
 				File classFile = iter.next();
 				try (FileInputStream is = new FileInputStream(classFile);) {
 					ClassReader cr = new ClassReader(is);
-					final String className = cr.getClassName().replace('/', '.');					
+					applicationClassNames.add(cr.getClassName());
+					final String className = cr.getClassName().replace('/', '.');
 					cl.loadClass(className);
 				} catch (Exception e) {
 					e.printStackTrace(System.err);
@@ -109,6 +129,12 @@ public class Main {
 			ClassReader cr = new ClassReader(is);
 			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
 			cr.accept(new ClassRewriter(cw), 0);
+
+			StringWriter sw = new StringWriter();
+			PrintWriter pw = new PrintWriter(sw);
+			CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false, pw);
+//			Verify.verify(sw.toString().length()==0, sw.toString());
+			System.err.println(sw.toString());
 			fos.write(cw.toByteArray());
 		} catch (IOException e) {
 			e.printStackTrace(System.err);
@@ -134,7 +160,7 @@ public class Main {
 		public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
 			MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
 			final String pcMethodName = createProgramCounterMethod(name, desc);
-			return new MethodAdapter(mv, className, pcMethodName);
+			return new MethodAdapter(mv, className, pcMethodName, this);
 		}
 
 		// @Override
@@ -164,6 +190,110 @@ public class Main {
 			mv.visitEnd();
 			return methodName;
 		}
+
+		Map<String, String> foobar = new LinkedHashMap<String, String>();
+
+		private List<String> splitDescription(String desc) {
+			List<String> ret = new LinkedList<String>();
+			String s = "";
+			for (int i = 0; i < desc.length(); i++) {
+				char c = desc.charAt(i);
+				if (Character.isLetter(c) && c != 'L') {
+					// fall through.
+				} else if (c == 'L') {
+					while (c != ';') { // collect class name
+						s += c;
+						i++;
+						c = desc.charAt(i);
+					}
+				} else if (c == '[') {
+					s += c; // do not add to ret yet.
+					continue;
+				} else {
+					throw new RuntimeException("Don't know type " + c);
+				}
+				ret.add(s + c);
+				s = "";
+			}
+			return ret;
+		}
+
+		public String lookupWrapperMethod(int opcode, String owner, String name, String desc, boolean itf,
+				String wrapperDesc) {
+			Verify.verify(!applicationClassNames.contains(owner), "Application method must not be wrapped!");
+			final String signature = owner + "." + name + desc;
+
+			if (!foobar.containsKey(signature)) {
+				int accessModifier = ACC_PRIVATE | ACC_STATIC;
+				String firstPart = owner.replace("/", "_") + name;
+				if (!desc.equals(wrapperDesc)) {
+					firstPart+=instanceWrapperSuffix;
+				}
+				final String wrapperName = firstPart + wrapperMethodNameSuffix;
+				MethodVisitor mv = cv.visitMethod(accessModifier, wrapperName, wrapperDesc, null, null);
+				// Load all parameters
+				List<String> argStrings = splitDescription(wrapperDesc.substring(1, wrapperDesc.lastIndexOf(')')));
+				for (int i = 0; i < argStrings.size(); i++) {
+					String s = argStrings.get(i);
+					if ("B".equals(s)) { // signed byte
+						mv.visitVarInsn(Opcodes.ILOAD, i);
+					} else if ("C".equals(s)) { // char
+						mv.visitVarInsn(Opcodes.ILOAD, i);
+					} else if ("D".equals(s)) { // double
+						mv.visitVarInsn(Opcodes.DLOAD, i);
+					} else if ("F".equals(s)) { // float
+						mv.visitVarInsn(Opcodes.FLOAD, i);
+					} else if ("I".equals(s)) { // int
+						mv.visitVarInsn(Opcodes.ILOAD, i);
+					} else if ("J".equals(s)) { // long
+						mv.visitVarInsn(Opcodes.LLOAD, i);
+					} else if (s.startsWith("L")) { // class
+						mv.visitVarInsn(Opcodes.ALOAD, i);
+					} else if ("S".equals(s)) { // short
+						mv.visitVarInsn(Opcodes.ILOAD, i);
+					} else if ("Z".equals(s)) { // bool
+						mv.visitVarInsn(Opcodes.ILOAD, i);
+					} else if (s.startsWith("[")) { // array
+						mv.visitVarInsn(Opcodes.ALOAD, i);
+					} else {
+						throw new RuntimeException("Unknown type signature " + s);
+					}
+				}
+				// call the original method.
+				mv.visitMethodInsn(opcode, owner, name, desc, itf);
+
+				String retString = wrapperDesc.substring(wrapperDesc.lastIndexOf(')') + 1);
+				if ("B".equals(retString)) { // signed byte
+					mv.visitInsn(Opcodes.IRETURN); // TODO is that true?
+				} else if ("C".equals(retString)) { // char
+					mv.visitInsn(Opcodes.IRETURN); // TODO is that true?
+				} else if ("D".equals(retString)) { // double
+					mv.visitInsn(Opcodes.DRETURN);
+				} else if ("F".equals(retString)) { // float
+					mv.visitInsn(Opcodes.FRETURN);
+				} else if ("I".equals(retString)) { // int
+					mv.visitInsn(Opcodes.IRETURN);
+				} else if ("J".equals(retString)) { // long
+					mv.visitInsn(Opcodes.LRETURN);
+				} else if (retString.startsWith("L")) { // class
+					mv.visitInsn(Opcodes.ARETURN);
+				} else if ("S".equals(retString)) { // short
+					mv.visitInsn(Opcodes.IRETURN); // TODO is that true?
+				} else if ("Z".equals(retString)) { // bool
+					mv.visitInsn(Opcodes.IRETURN); // TODO is that true?
+				} else if ("V".equals(retString)) { // void
+					mv.visitInsn(Opcodes.RETURN);
+				} else if (retString.startsWith("[")) { // array
+					mv.visitInsn(Opcodes.ARETURN);
+				} else {
+					throw new RuntimeException("Unknown type signature " + retString);
+				}
+				mv.visitMaxs(1, argStrings.size());
+				mv.visitEnd();
+				foobar.put(signature, wrapperName);
+			}
+			return foobar.get(signature);
+		}
 	}
 
 	public static String composePcMethodName(String name, String desc) {
@@ -181,11 +311,13 @@ public class Main {
 		private int instCounter = 0;
 
 		protected final String className, pcMethodName;
+		protected final ClassRewriter containClassVisitor;
 
-		public MethodAdapter(MethodVisitor mv, String className, String pcMethodName) {
+		public MethodAdapter(MethodVisitor mv, String className, String pcMethodName, ClassRewriter cv) {
 			super(ASM5, mv);
 			this.className = className;
 			this.pcMethodName = pcMethodName;
+			this.containClassVisitor = cv;
 		}
 
 		private void sampleInstCounter() {
@@ -202,28 +334,24 @@ public class Main {
 
 		@Override
 		public void visitIntInsn(int opcode, int operand) {
-			// TODO Auto-generated method stub
 			sampleInstCounter();
 			super.visitIntInsn(opcode, operand);
 		}
 
 		@Override
 		public void visitVarInsn(int opcode, int var) {
-			// TODO Auto-generated method stub
 			sampleInstCounter();
 			super.visitVarInsn(opcode, var);
 		}
 
 		@Override
 		public void visitTypeInsn(int opcode, String type) {
-			// TODO Auto-generated method stub
 			sampleInstCounter();
 			super.visitTypeInsn(opcode, type);
 		}
 
 		@Override
 		public void visitFieldInsn(int opcode, String owner, String name, String desc) {
-			// TODO Auto-generated method stub
 			sampleInstCounter();
 			super.visitFieldInsn(opcode, owner, name, desc);
 		}
@@ -232,7 +360,34 @@ public class Main {
 		public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
 			// TODO Auto-generated method stub
 			sampleInstCounter();
-			super.visitMethodInsn(opcode, owner, name, desc, itf);
+			if (applicationClassNames.contains(owner)) {
+				super.visitMethodInsn(opcode, owner, name, desc, itf);
+				return;
+			} else if (!applicationClassNames.contains(owner) && "<init>".equals(name)) {
+				// don't wrap constructors because of this
+				// "Type uninitialized 0 (current frame, stack[1]) is not
+				// assignable to ..."
+				// exception
+				super.visitMethodInsn(opcode, owner, name, desc, itf);
+				return;
+			} else {
+
+				String wrapperDesc = desc;
+				if (opcode == Opcodes.INVOKESTATIC) {
+					// leave desc as is
+				} else {
+					StringBuilder sb = new StringBuilder();
+					sb.append("(L");
+					sb.append(owner);
+					sb.append(";");
+					sb.append(desc.substring(1));
+					wrapperDesc = sb.toString();
+				}
+				final String wrappedMethodName = this.containClassVisitor.lookupWrapperMethod(opcode, owner, name, desc,
+						itf, wrapperDesc);
+				super.visitMethodInsn(Opcodes.INVOKESTATIC, className, wrappedMethodName, wrapperDesc, false);
+				return;
+			}
 		}
 
 		@Override
@@ -244,21 +399,18 @@ public class Main {
 
 		@Override
 		public void visitLdcInsn(Object cst) {
-			// TODO Auto-generated method stub
 			sampleInstCounter();
 			super.visitLdcInsn(cst);
 		}
 
 		@Override
 		public void visitIincInsn(int var, int increment) {
-			// TODO Auto-generated method stub
 			sampleInstCounter();
 			super.visitIincInsn(var, increment);
 		}
 
 		@Override
 		public void visitMultiANewArrayInsn(String desc, int dims) {
-			// TODO Auto-generated method stub
 			sampleInstCounter();
 			super.visitMultiANewArrayInsn(desc, dims);
 		}

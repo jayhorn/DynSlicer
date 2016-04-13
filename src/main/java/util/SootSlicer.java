@@ -1,19 +1,25 @@
 package util;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.Stack;
 
 import com.google.common.base.Verify;
 
 import daikon.PptTopLevel;
+import daikon.ProglangType;
 import daikon.ValueTuple;
 import daikon.VarInfo;
+import daikon.VarInfo.VarKind;
 import daikon.util.Pair;
 import soot.Body;
 import soot.CharType;
@@ -26,10 +32,12 @@ import soot.Modifier;
 import soot.PatchingChain;
 import soot.PrimType;
 import soot.RefLikeType;
+import soot.RefType;
 import soot.Scene;
 import soot.SootClass;
 import soot.SootField;
 import soot.SootMethod;
+import soot.Type;
 import soot.Unit;
 import soot.Value;
 import soot.ValueBox;
@@ -54,6 +62,7 @@ import soot.jimple.ParameterRef;
 import soot.jimple.ReturnStmt;
 import soot.jimple.ReturnVoidStmt;
 import soot.jimple.Stmt;
+import soot.jimple.StringConstant;
 import soot.jimple.SwitchStmt;
 import soot.jimple.ThisRef;
 import soot.jimple.ThrowStmt;
@@ -66,6 +75,17 @@ import util.DaikonRunner.DaikonTrace;
 public class SootSlicer {
 	public static final String pcMethodNameSuffix = "__PC__METHOD";
 	public static final String pcMethodArgName = "arg";
+	public static final String wrapperMethodNameSuffix = "__WRAPPER__METHOD";
+	public static final String instanceWrapperSuffix = "__HASBASE__";
+
+	SootMethod myAssert ;
+	
+	public static void main(String[] args) {
+		// For testing only!
+		SootSlicer sc = new SootSlicer();
+		DaikonRunner dr = new DaikonRunner();
+		sc.computeErrorSlices(new File(args[0]), args[1], dr.parseDTraceFile("ErrorTestDriver.dtrace"));
+	}
 
 	/**
 	 * Returns a soot class that contains one method per trace. Each method
@@ -75,13 +95,33 @@ public class SootSlicer {
 	 * @param classPath
 	 * @param traces
 	 * @return
-	 */
+	 */	
 	public SootClass computeErrorSlices(File classDir, String classPath, Collection<DaikonTrace> traces) {
+
+		System.out.println("Computing slices for input: ");
+		System.out.println("ClassDir: " + classDir.getAbsolutePath());
+		System.out.println("ClassPath: " + classPath);
+
 		loadSootScene(classDir, classPath);
 
 		SootClass myClass = new SootClass("HelloWorld", Modifier.PUBLIC);
-		myClass.setSuperclass(Scene.v().getSootClass("java.lang.Object"));
+		SootClass objClass = Scene.v().getSootClass("java.lang.Object");
+		myClass.setSuperclass(objClass);
 		Scene.v().addClass(myClass);
+
+		//create the assert method.
+		this.myAssert = new SootMethod("my_Assert",  Arrays.asList(new Type[] {RefType.v(objClass), RefType.v(objClass)}),
+				VoidType.v(), Modifier.PUBLIC | Modifier.STATIC);
+		myClass.addMethod(myAssert);
+		JimpleBody body = Jimple.v().newBody(myAssert);
+		myAssert.setActiveBody(body);
+		Local l0 = Jimple.v().newLocal("l0", RefType.v(objClass));
+		Local l1 = Jimple.v().newLocal("l1", RefType.v(objClass));
+		body.getLocals().add(l0);
+		body.getLocals().add(l1);
+		body.getUnits().add(Jimple.v().newIdentityStmt(l0, Jimple.v().newParameterRef(RefType.v(objClass), 0)));
+		body.getUnits().add(Jimple.v().newIdentityStmt(l1, Jimple.v().newParameterRef(RefType.v(objClass), 1)));
+		// done with assert method.
 
 		for (DaikonTrace t : traces) {
 			computeErrorSlice(t, myClass);
@@ -89,6 +129,9 @@ public class SootSlicer {
 
 		return myClass;
 	}
+
+	
+	private DaikonTrace currentTrace;
 
 	/**
 	 * For a given trace, create a method that contains the sequqnce of
@@ -98,21 +141,21 @@ public class SootSlicer {
 	 * @param containingClass
 	 */
 	public void computeErrorSlice(final DaikonTrace trace, final SootClass containingClass) {
-
+		this.currentTrace = trace;
+		// System.err.println("****** All Events");
 		// for (Pair<PptTopLevel, ValueTuple> ppt : trace.trace) {
 		// System.err.println(ppt.a.name);
 		// }
-
-		// TODO: initialize all fields to default values.
+		// System.err.println("****** ");
 
 		Iterator<Pair<PptTopLevel, ValueTuple>> iterator = trace.trace.iterator();
 		SootMethod sm = createTraceMethod(iterator, containingClass);
 		addFakeReturn(sm);
 		UnusedLocalEliminator.v().transform(sm.getActiveBody());
 		//
-//		 for (Unit u : sm.getActiveBody().getUnits()) {
-//		 System.err.println(" " + u);
-//		 }
+		// for (Unit u : sm.getActiveBody().getUnits()) {
+		// System.err.println(" " + u);
+		// }
 		sm.getActiveBody().validate();
 		// System.err.println(".......");
 	}
@@ -195,15 +238,17 @@ public class SootSlicer {
 		final Map<Value, Value> substiutionMap = new HashMap<Value, Value>();
 
 		sm = findMethodForPpt(ppt.a);
-		// TODO get the active body and start adding to it.
+		// get the active body and start adding to it.
 		newMethod = createNewMethod(sm, containingClass);
 		final Body newBody = newMethod.getActiveBody();
 
 		enterMethod(ppt, methodStack, callStack, newBody, substiutionMap);
 
 		while (iterator.hasNext()) {
-			boolean exceptionalJump = false;
 			ppt = iterator.next();
+
+			boolean exceptionalJump = false;
+
 			if (ppt.a.name.contains(pcMethodNameSuffix) && ppt.a.name.endsWith(":::ENTER")) {
 				/**
 				 * =============================================================
@@ -218,14 +263,17 @@ public class SootSlicer {
 						// then there was an exception and we have to pop stuff
 						// from our stacks until we have the right method again.
 						while (!pcMethodStack.isEmpty() && !ppt.a.name.equals(pcMethodStack.peek())) {
-							if (!callStack.isEmpty())
+							if (!callStack.isEmpty()) {
 								callStack.pop();
-							methodStack.pop();
+							}
+							SootMethod tmp = methodStack.pop();
+							System.out.println("Jumping over " + tmp.getName());
 							pcMethodStack.pop();
 						}
 						if (!pcMethodStack.isEmpty()) {
 							sm = methodStack.peek();
 							body = sm.retrieveActiveBody();
+							System.out.println("Exception to " + sm.getName());
 							exceptionalJump = true;
 						} else {
 							return newMethod;
@@ -245,7 +293,9 @@ public class SootSlicer {
 
 				List<Integer> skipList = new LinkedList<Integer>();
 				Unit u = findUnitAtPos(body, arg, skipList);
-				// System.err.println(" "+u);
+				// Unit u= findUnitAtPos(body, arg, iterator);
+				System.err.println("  " + u + "\t" + sm.getName());
+
 				if (exceptionalJump) {
 					// get the caughtexceptionref
 					Unit pre = u;
@@ -315,12 +365,10 @@ public class SootSlicer {
 					}
 				} else if (((Stmt) u).containsInvokeExpr()) {
 					InvokeExpr ivk = ((Stmt) u).getInvokeExpr();
+
 					if (ivk.getMethod().getDeclaringClass().isLibraryClass()
 							|| ivk.getMethod().getDeclaringClass().isJavaLibraryClass()) {
 						// do not try to inline library calls.
-						// TODO: instead, update the state depending on the
-						// delta between
-						// the previous state and the current state.
 						newBody.getUnits().add(copySootStmt(u, substiutionMap));
 					} else {
 						callStack.push(u);
@@ -336,14 +384,49 @@ public class SootSlicer {
 						return newMethod;
 					}
 					ppt = iterator.next();
-					Verify.verify(ppt.a.name.contains(pcMethodNameSuffix)
-							&& ppt.a.name.endsWith(":::ENTER"));
+					Verify.verify(ppt.a.name.contains(pcMethodNameSuffix) && ppt.a.name.endsWith(":::ENTER"));
 					vi = ppt.a.find_var_by_name(pcMethodArgName);
 					arg = (Long) ppt.b.getValueOrNull(vi);
 					Verify.verify(arg == (long) i, "Wrong number " + arg + "!=" + i);
 					ppt = iterator.next();
-					Verify.verify(ppt.a.name.contains(pcMethodNameSuffix)
-							&& ppt.a.name.contains(":::EXIT"));
+					Verify.verify(ppt.a.name.contains(pcMethodNameSuffix) && ppt.a.name.contains(":::EXIT"));
+				}
+			} else if (ppt.a.name.contains(wrapperMethodNameSuffix) && ppt.a.name.endsWith(":::ENTER")) {
+				Pair<PptTopLevel, ValueTuple> next = peekNextPpt(ppt);
+				Unit call = callStack.pop();
+				SootMethod callee = ((Stmt)call).getInvokeExpr().getMethod();
+				if (next.a.name.contains(wrapperMethodNameSuffix) && next.a.name.contains(":::EXIT")) {
+					Pair<PptTopLevel, ValueTuple> pre = ppt;
+					ppt = iterator.next();
+					findChangedVariables(pre, ppt);// TODO side effects.
+					if (call instanceof DefinitionStmt) {
+						VarInfo retVi = null;
+						for (VarInfo vi : ppt.a.var_infos) {
+							if (vi.var_kind == VarKind.RETURN) {
+								retVi = vi;
+								break;
+							}
+						}
+						Verify.verifyNotNull(retVi);
+						Object retVal = ppt.b.getValueOrNull(retVi);
+						Value rhs = daikonValueToSootValue(retVi, retVal);
+						Unit asn = Jimple.v().newAssignStmt(((DefinitionStmt) call).getLeftOp(), rhs);
+						asn.addAllTagsOf(call);
+						newBody.getUnits().add(copySootStmt(asn, substiutionMap));
+					}
+				} else {					
+					if (callee.getName().contains(instanceWrapperSuffix)) {
+						Value v1 = ((Stmt)call).getInvokeExpr().getArg(0);
+						Value v2 = NullConstant.v();
+						Unit asrt = Jimple.v().newInvokeStmt(Jimple.v().newStaticInvokeExpr(myAssert.makeRef(), v1,v2));
+						asrt.addAllTagsOf(call);
+						asrt = copySootStmt(asrt, substiutionMap);						
+						newBody.getUnits().add(asrt);
+					} else {
+						newBody.getUnits().add(call);	
+					}
+					//TODO: assert that the current input is illegal.
+					// throw new RuntimeException("throws an ex "+ppt.a.name);
 				}
 			} else if (ppt.a.name.endsWith(":::ENTER")) {
 				enterMethod(ppt, methodStack, callStack, newBody, substiutionMap);
@@ -360,26 +443,86 @@ public class SootSlicer {
 		return newMethod;
 	}
 
-	// private Unit findUnitPcMethodCall(Body body, long pos) {
-	// PatchingChain<Unit> units = body.getUnits();
-	// for (Unit u : units) {
-	// if (u instanceof InvokeStmt) {
-	// InvokeStmt ivk = (InvokeStmt) u;
-	// InvokeExpr ie = ivk.getInvokeExpr();
-	// List<Value> args = ie.getArgs();
-	//
-	// if (isPcMethod(ivk) && (((IntConstant) args.get(0)).value == (int) pos))
-	// {
-	// return u;
-	// }
-	// }
-	// }
-	// return null;
-	// }
+	private Value daikonValueToSootValue(VarInfo vi, Object val) {
+		if (vi.type == ProglangType.INT || vi.type == ProglangType.BOOLEAN || vi.type == ProglangType.CHAR) {
+			return IntConstant.v( ((Long) val).intValue() );
+		} else if (vi.type == ProglangType.LONG_PRIMITIVE || vi.type == ProglangType.LONG_OBJECT) {
+			return LongConstant.v((Long) val);
+		} else if (vi.type == ProglangType.STRING) {
+			return StringConstant.v((String)val);			
+		}
+		throw new RuntimeException("not implemented for type " + vi.type);
+	}
+
+	private Pair<PptTopLevel, ValueTuple> peekNextPpt(Pair<PptTopLevel, ValueTuple> ppt) {
+		return peekNextPpt(ppt, 0);
+	}
+
+	private Pair<PptTopLevel, ValueTuple> peekNextPpt(Pair<PptTopLevel, ValueTuple> ppt, int offset) {
+		int currentPos = this.currentTrace.trace.indexOf(ppt);
+		ListIterator<Pair<PptTopLevel, ValueTuple>> lit = this.currentTrace.trace.listIterator(currentPos + 1 + offset);
+		if (lit.hasNext()) {
+			return lit.next();
+		}
+		return null;
+	}
+
+	private Set<VarInfo> findChangedVariables(Pair<PptTopLevel, ValueTuple> pre, Pair<PptTopLevel, ValueTuple> post) {
+		Set<VarInfo> changedVars = new HashSet<VarInfo>();
+		for (VarInfo a : pre.a.var_infos) {
+			for (VarInfo b : post.a.var_infos) {
+				if (a.equals(b)) {
+					Object v1 = pre.b.getValueOrNull(a);
+					Object v2 = post.b.getValueOrNull(a);
+					if (v1 == null && v2 == null) {
+						// nothing changed; ignore
+					} else if (v1 != null && v1.equals(v2)) {
+						// nothing changed; ignore
+					} else {
+						// value changed. remember update.
+						System.err.println("Var " + a.name() + " changed from " + v1 + " to " + v2);
+						changedVars.add(b);
+					}
+				}
+			}
+		}
+		return changedVars;
+	}
+
+//	private void findChangedVariables(Pair<PptTopLevel, ValueTuple> ppt, Unit u, int skipListSize) {
+//		// TODO: +3 seems to be a correct offset, because there might be one
+//		// enter and exit after
+//		// the ppt ... however, magic constants are always bad so find a better
+//		// way to do this.
+//		int currentPos = this.currentTrace.trace.indexOf(ppt) + 3 + skipListSize;
+//		if (currentPos == this.currentTrace.trace.size() - 1) {
+//			throw new RuntimeException("Not implemented");
+//		}
+//		ListIterator<Pair<PptTopLevel, ValueTuple>> lit = this.currentTrace.trace.listIterator(currentPos);
+//		if (lit.hasNext()) {
+//			Pair<PptTopLevel, ValueTuple> next_ppt = lit.next();
+//			final String next_label = next_ppt.a.name;
+//			// check if the next program point is a statement
+//			// in another procedure. In that case, this point threw an
+//			// exception.
+//
+//			if (next_label.endsWith(":::ENTER") && !pcMethodStack.isEmpty()
+//					&& !next_label.equals(pcMethodStack.peek())) {
+//				// throw new RuntimeException("Lib function throw an exception:
+//				// " + u);
+//			} else {
+//				findChangedVariables(ppt, next_ppt);
+//			}
+//			// TODO
+//		} else {
+//			throw new RuntimeException("Not implemented");
+//		}
+//	}
 
 	private void enterMethod(Pair<PptTopLevel, ValueTuple> ppt, final Stack<SootMethod> methodStack,
 			final Stack<Unit> callStack, Body newBody, final Map<Value, Value> substiutionMap) {
 		sm = findMethodForPpt(ppt.a);
+
 		body = sm.retrieveActiveBody();
 		methodStack.push(sm);
 		haveToPushToPcStack = true;
@@ -437,7 +580,7 @@ public class SootSlicer {
 					Unit init = Jimple.v().newAssignStmt(lhs, rhs);
 					newBody.getUnits().add(copySootStmt(init, substiutionMap));
 				}
-			}			
+			}
 		}
 
 	}
@@ -479,22 +622,24 @@ public class SootSlicer {
 		String methodName = qualifiedMethodName.substring(qualifiedMethodName.lastIndexOf('.') + 1,
 				qualifiedMethodName.length());
 
+		if (!Scene.v().containsClass(className)) {
+			throw new RuntimeException("Class not in scene: " + className);
+		}
 		SootClass sc = Scene.v().getSootClass(className);
 		if (className.endsWith(methodName)) {
 			// constructor call.
 			methodName = "<init>";
 		}
-		
-		
 
-		final String paramSig = ppt.name.substring(ppt.name.indexOf("(")+1,ppt.name.indexOf(":::")-1).replace(" ", "");		
-		List<soot.Type> paramTypes = new LinkedList<soot.Type>(); 
-		if (paramSig!=null && paramSig.length()>0) {
+		final String paramSig = ppt.name.substring(ppt.name.indexOf("(") + 1, ppt.name.indexOf(":::") - 1).replace(" ",
+				"");
+		List<soot.Type> paramTypes = new LinkedList<soot.Type>();
+		if (paramSig != null && paramSig.length() > 0) {
 			for (String paramName : paramSig.split(",")) {
 				soot.Type t = stringToType(paramName);
 				paramTypes.add(t);
 			}
-		}				
+		}
 		SootMethod sm = sc.getMethod(methodName, paramTypes);
 		return sm;
 	}
@@ -502,7 +647,7 @@ public class SootSlicer {
 	private soot.Type stringToType(String s) {
 		soot.Type t;
 		if (s.endsWith("[]")) {
-			return stringToType(s.substring(0, s.length()-2)).makeArrayType();
+			return stringToType(s.substring(0, s.length() - 2)).makeArrayType();
 		}
 		if ("int".equals(s)) {
 			t = IntType.v();
@@ -519,9 +664,8 @@ public class SootSlicer {
 		}
 		return t;
 	}
-	
+
 	private void loadSootScene(File classDir, String classPath) {
-		System.out.println("Running soot with classpath: " + classPath);
 		Options sootOpt = Options.v();
 		sootOpt.set_keep_line_number(true);
 		sootOpt.set_prepend_classpath(true); // -pp
@@ -539,6 +683,7 @@ public class SootSlicer {
 
 		sootOpt.setPhaseOption("jb.a", "enabled:false");
 		sootOpt.setPhaseOption("jop.cpf", "enabled:false");
+		sootOpt.setPhaseOption("jop.cfg", "enabled:true");
 		sootOpt.setPhaseOption("jb", "use-original-names:true");
 
 		Scene.v().loadClassAndSupport("java.lang.System");
@@ -548,10 +693,6 @@ public class SootSlicer {
 		Scene.v().loadBasicClasses();
 		Scene.v().loadNecessaryClasses();
 
-		/*
-		 * TODO: apply some preprocessing stuff like:
-		 * soot.jimple.toolkits.base or maybe the optimize option from soot.
-		 */
 		for (SootClass sc : Scene.v().getClasses()) {
 			if (sc.resolvingLevel() < SootClass.SIGNATURES) {
 				sc.setResolvingLevel(SootClass.SIGNATURES);
