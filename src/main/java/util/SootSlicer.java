@@ -77,8 +77,9 @@ public class SootSlicer {
 	public static final String pcMethodArgName = "arg";
 	public static final String wrapperMethodNameSuffix = "__WRAPPER__METHOD";
 	public static final String instanceWrapperSuffix = "__HASBASE__";
-
-	SootMethod myAssert ;
+	public static final String assertionMethodName = "my_Assert";
+	
+	private Map<soot.Type, SootMethod> assertMethods = new HashMap<soot.Type, SootMethod>();
 	
 	public static void main(String[] args) {
 		// For testing only!
@@ -109,20 +110,12 @@ public class SootSlicer {
 		myClass.setSuperclass(objClass);
 		Scene.v().addClass(myClass);
 
-		//create the assert method.
-		this.myAssert = new SootMethod("my_Assert",  Arrays.asList(new Type[] {RefType.v(objClass), RefType.v(objClass)}),
-				VoidType.v(), Modifier.PUBLIC | Modifier.STATIC);
-		myClass.addMethod(myAssert);
-		JimpleBody body = Jimple.v().newBody(myAssert);
-		myAssert.setActiveBody(body);
-		Local l0 = Jimple.v().newLocal("l0", RefType.v(objClass));
-		Local l1 = Jimple.v().newLocal("l1", RefType.v(objClass));
-		body.getLocals().add(l0);
-		body.getLocals().add(l1);
-		body.getUnits().add(Jimple.v().newIdentityStmt(l0, Jimple.v().newParameterRef(RefType.v(objClass), 0)));
-		body.getUnits().add(Jimple.v().newIdentityStmt(l1, Jimple.v().newParameterRef(RefType.v(objClass), 1)));
-		// done with assert method.
-
+		assertMethods.put(RefType.v(), makeAssertMethod(myClass, RefType.v(objClass)));
+		assertMethods.put(IntType.v(), makeAssertMethod(myClass, IntType.v()));
+		assertMethods.put(FloatType.v(), makeAssertMethod(myClass, FloatType.v()));
+		assertMethods.put(DoubleType.v(), makeAssertMethod(myClass, DoubleType.v()));
+		assertMethods.put(LongType.v(), makeAssertMethod(myClass, LongType.v()));		
+		
 		for (DaikonTrace t : traces) {
 			computeErrorSlice(t, myClass);
 		}
@@ -130,6 +123,21 @@ public class SootSlicer {
 		return myClass;
 	}
 
+	private SootMethod makeAssertMethod(SootClass myClass, soot.Type type) {		
+		SootMethod sm = new SootMethod(assertionMethodName,  Arrays.asList(new Type[] {type, type}),
+				VoidType.v(), Modifier.PUBLIC | Modifier.STATIC);
+		myClass.addMethod(sm);
+		JimpleBody body = Jimple.v().newBody(sm);
+		sm.setActiveBody(body);
+		Local l0 = Jimple.v().newLocal("l0", type);
+		Local l1 = Jimple.v().newLocal("l1", type);
+		body.getLocals().add(l0);
+		body.getLocals().add(l1);
+		body.getUnits().add(Jimple.v().newIdentityStmt(l0, Jimple.v().newParameterRef(type, 0)));
+		body.getUnits().add(Jimple.v().newIdentityStmt(l1, Jimple.v().newParameterRef(type, 1)));
+		// done with assert method.
+		return sm;
+	}
 	
 	private DaikonTrace currentTrace;
 
@@ -294,7 +302,7 @@ public class SootSlicer {
 				List<Integer> skipList = new LinkedList<Integer>();
 				Unit u = findUnitAtPos(body, arg, skipList);
 				// Unit u= findUnitAtPos(body, arg, iterator);
-				System.err.println("  " + u + "\t" + sm.getName());
+//				System.err.println("  " + u + "\t" + sm.getName());
 
 				if (exceptionalJump) {
 					// get the caughtexceptionref
@@ -398,7 +406,11 @@ public class SootSlicer {
 				if (next.a.name.contains(wrapperMethodNameSuffix) && next.a.name.contains(":::EXIT")) {
 					Pair<PptTopLevel, ValueTuple> pre = ppt;
 					ppt = iterator.next();
-					findChangedVariables(pre, ppt);// TODO side effects.
+					Set<VarInfo> changedVars = findChangedVariables(pre, ppt);
+					for (VarInfo vi : changedVars) {
+						throw new RuntimeException("Not implementd ");// TODO side effects.
+					}
+					//update the return value.
 					if (call instanceof DefinitionStmt) {
 						VarInfo retVi = null;
 						for (VarInfo vi : ppt.a.var_infos) {
@@ -413,12 +425,14 @@ public class SootSlicer {
 						Unit asn = Jimple.v().newAssignStmt(((DefinitionStmt) call).getLeftOp(), rhs);
 						asn.addAllTagsOf(call);
 						newBody.getUnits().add(copySootStmt(asn, substiutionMap));
-					}
-				} else {					
+					}					
+				} else {
+					int offset = 0;
 					if (callee.getName().contains(instanceWrapperSuffix)) {
+						offset = 1;
 						Value v1 = ((Stmt)call).getInvokeExpr().getArg(0);
 						Value v2 = NullConstant.v();
-						Unit asrt = Jimple.v().newInvokeStmt(Jimple.v().newStaticInvokeExpr(myAssert.makeRef(), v1,v2));
+						Unit asrt = Jimple.v().newInvokeStmt(Jimple.v().newStaticInvokeExpr(assertMethods.get(RefType.v()).makeRef(), v1,v2));
 						asrt.addAllTagsOf(call);
 						asrt = copySootStmt(asrt, substiutionMap);						
 						newBody.getUnits().add(asrt);
@@ -427,6 +441,19 @@ public class SootSlicer {
 					}
 					//TODO: assert that the current input is illegal.
 					// throw new RuntimeException("throws an ex "+ppt.a.name);
+					for (int i = offset; i<((Stmt)call).getInvokeExpr().getArgCount();i++) {
+						Value v1 = ((Stmt)call).getInvokeExpr().getArg(i);
+						VarInfo argVar = ppt.a.find_var_by_name("arg"+i);
+						Object argVal = ppt.b.getValueOrNull(argVar);
+						Value v2 = daikonValueToSootValue(argVar, argVal);
+						Verify.verify(v1.getType().equals(v2.getType()));
+						Unit asrt = Jimple.v().newInvokeStmt(Jimple.v().newStaticInvokeExpr(assertMethods.get(v1.getType()).makeRef(), v1,v2));
+						asrt.addAllTagsOf(call);
+						asrt = copySootStmt(asrt, substiutionMap);						
+						newBody.getUnits().add(asrt);
+						System.err.println("adding assertion " + asrt);						
+					}
+					
 				}
 			} else if (ppt.a.name.endsWith(":::ENTER")) {
 				enterMethod(ppt, methodStack, callStack, newBody, substiutionMap);
@@ -444,7 +471,9 @@ public class SootSlicer {
 	}
 
 	private Value daikonValueToSootValue(VarInfo vi, Object val) {
-		if (vi.type == ProglangType.INT || vi.type == ProglangType.BOOLEAN || vi.type == ProglangType.CHAR) {
+		if (val==null) {
+			return NullConstant.v();
+		} else if (vi.type == ProglangType.INT || vi.type == ProglangType.BOOLEAN || vi.type == ProglangType.CHAR) {
 			return IntConstant.v( ((Long) val).intValue() );
 		} else if (vi.type == ProglangType.LONG_PRIMITIVE || vi.type == ProglangType.LONG_OBJECT) {
 			return LongConstant.v((Long) val);

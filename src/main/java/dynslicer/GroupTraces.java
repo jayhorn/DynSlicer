@@ -13,6 +13,7 @@ import soot.SootClass;
 import soot.SootMethod;
 import soot.jimple.toolkits.scalar.ConstantPropagatorAndFolder;
 import soot.jimple.toolkits.scalar.CopyPropagator;
+import util.SootSlicer;
 
 /**
  * @author schaef
@@ -24,7 +25,7 @@ public class GroupTraces {
 		Report report = new Report();
 		SootBodyTransformer trans = new SootBodyTransformer(report);
 		for (SootMethod sm : traceClass.getMethods()) {
-			if (!sm.isConstructor()) {
+			if (!sm.isConstructor() && !sm.getName().contains(SootSlicer.assertionMethodName)) {
 				ConstantPropagatorAndFolder.v().transform(sm.getActiveBody());
 				CopyPropagator.v().transform(sm.getActiveBody());				
 				trans.transform(sm.getActiveBody());
