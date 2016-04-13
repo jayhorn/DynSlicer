@@ -719,8 +719,9 @@ public class SootSlicer {
 		Scene.v().loadClassAndSupport("java.lang.Thread");
 		Scene.v().loadClassAndSupport("java.lang.ThreadGroup");
 
-		Scene.v().loadBasicClasses();
+		Scene.v().loadBasicClasses();		
 		Scene.v().loadNecessaryClasses();
+		
 
 		for (SootClass sc : Scene.v().getClasses()) {
 			if (sc.resolvingLevel() < SootClass.SIGNATURES) {

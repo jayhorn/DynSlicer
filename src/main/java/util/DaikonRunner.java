@@ -61,7 +61,11 @@ public class DaikonRunner extends AbstractRunner {
 	private Set<String> getNamespacesFromClasses(Set<String> classNames) {
 		Set<String> ret = new HashSet<String>();
 		for (String s : classNames) {
-			ret.add(s.substring(0, s.lastIndexOf(".")));
+			if (!s.contains(".")) {
+				ret.add(s);
+			} else {
+				ret.add(s.substring(0, s.lastIndexOf(".")));
+			}
 		}
 		return ret;
 	}
