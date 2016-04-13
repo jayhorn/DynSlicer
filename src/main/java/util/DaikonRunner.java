@@ -5,6 +5,7 @@ package util;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -23,13 +24,25 @@ import dynslicer.Main;
  */
 public class DaikonRunner extends AbstractRunner {
 
-	public Set<DaikonTrace> run(String classPath, String mainClass) {
+	public Set<DaikonTrace> run(String classPath, String mainClass, Set<String> classesToInclude) {
 		// Run Daikon
 		List<String> cmd = new LinkedList<String>();
 		cmd.add("java");
 		cmd.add("-classpath");
 		cmd.add(classPath + File.pathSeparator + Main.basePath+"lib/daikon.jar");
 		cmd.add("daikon.Chicory");
+		
+		StringBuilder sb = new StringBuilder();
+		sb.append("--ppt-select-pattern=^(ErrorTestDriver|ErrorTest(\\d)+");
+		for (String className : getNamespacesFromClasses(classesToInclude)) {
+			sb.append("|");
+			sb.append(className);
+		}
+		sb.append(")\\S*");
+//		sb.append("--ppt-select-pattern=\"\\S*\"");
+		String inclusionRegex = sb.toString();
+		System.err.println(inclusionRegex);
+		cmd.add(inclusionRegex);
 		
 //		cmd.add("--dtrace-file=ErrorTestDriver.dtrace");
 		cmd.add(mainClass);
@@ -45,6 +58,14 @@ public class DaikonRunner extends AbstractRunner {
 		return parseDTraceFile(mainClass + ".dtrace");
 	}
 
+	private Set<String> getNamespacesFromClasses(Set<String> classNames) {
+		Set<String> ret = new HashSet<String>();
+		for (String s : classNames) {
+			ret.add(s.substring(0, s.lastIndexOf(".")));
+		}
+		return ret;
+	}
+	
 	public Set<DaikonTrace> parseDTraceFile(String dtraceFileName) {
 		CollectDataProcessor processor = new CollectDataProcessor();
 		PptMap ppts = new PptMap();

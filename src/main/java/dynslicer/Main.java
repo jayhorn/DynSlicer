@@ -71,7 +71,7 @@ public class Main {
 		cp.add(basePath+"lib/daikon.jar");
 		cp.add(testDir.getAbsolutePath());		
 		final String daikonClassPath = StringUtils.join(cp, File.pathSeparator);
-		Set<DaikonTrace> traces = dr.run(daikonClassPath, "ErrorTestDriver");
+		Set<DaikonTrace> traces = dr.run(daikonClassPath, "ErrorTestDriver", classes);
 
 		System.err.println("Number of Traces " + traces.size());
 		
