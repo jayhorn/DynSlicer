@@ -11,6 +11,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import dynslicer.Main;
+import util.Util;
 
 /**
  * @author schaef

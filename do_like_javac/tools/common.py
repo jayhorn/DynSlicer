@@ -1,3 +1,4 @@
+import sys
 import subprocess
 import traceback
 import os
@@ -28,8 +29,13 @@ def source_path(javac_command):
   return None
 
 def run_cmd(cmd):
-  print ("Running %s" % (" ".join(cmd)))
+  print ("Running %s" % cmd)
   try:
-      print (subprocess.check_output(cmd, stderr=subprocess.STDOUT))
+    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    for line in iter(process.stdout.readline, b''):
+      sys.stdout.write(line)
+      sys.stdout.flush()
+    process.stdout.close()
+    process.wait()
   except:
-      print ('calling {cmd} failed\n{trace}'.format(cmd=' '.join(cmd),trace=traceback.format_exc()))
+    print ('calling {cmd} failed\n{trace}'.format(cmd=' '.join(cmd),trace=traceback.format_exc()))

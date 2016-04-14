@@ -49,8 +49,8 @@ dependencies {
 	compile 'com.google.code.findbugs:annotations:3.0.0'
     compile 'org.apache.commons:commons-lang3:3.4'
     compile 'com.google.guava:guava:19.0'
-    compile 'org.ow2.asm:asm:5.1'
-    compile 'org.ow2.asm:asm-util:5.1'
+//    compile 'org.ow2.asm:asm:5.1'
+//    compile 'org.ow2.asm:asm-util:5.1'
     
 	compile fileTree(dir: 'lib', include: '*.jar')
 

@@ -54,7 +54,7 @@ public class Main {
 	public static final String pcMethodArgName = "arg";
 
 	public static final String wrapperMethodNameSuffix = "__WRAPPER__METHOD";
-	
+
 	public static final String instanceWrapperSuffix = "__HASBASE__";
 
 	protected static Set<String> applicationClassNames;
@@ -71,7 +71,9 @@ public class Main {
 					ClassReader cr = new ClassReader(is);
 					applicationClassNames.add(cr.getClassName());
 					final String className = cr.getClassName().replace('/', '.');
+					System.err.println("loading class " + className);
 					cl.loadClass(className);
+					System.err.println("done ");
 				} catch (Exception e) {
 					e.printStackTrace(System.err);
 				}
@@ -133,8 +135,8 @@ public class Main {
 			StringWriter sw = new StringWriter();
 			PrintWriter pw = new PrintWriter(sw);
 			CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false, pw);
-//			Verify.verify(sw.toString().length()==0, sw.toString());
-			System.err.println(sw.toString());
+			Verify.verify(sw.toString().length() == 0, sw.toString());
+			// System.err.println(sw.toString());
 			fos.write(cw.toByteArray());
 		} catch (IOException e) {
 			e.printStackTrace(System.err);
@@ -210,7 +212,9 @@ public class Main {
 					s += c; // do not add to ret yet.
 					continue;
 				} else {
-					throw new RuntimeException("Don't know type " + c);
+					System.err.println("Desc: " + desc);
+					throw new RuntimeException(
+							"Don't know type " + c + " between " + desc.substring(0, i) + " and " + desc.substring(i));
 				}
 				ret.add(s + c);
 				s = "";
@@ -227,11 +231,12 @@ public class Main {
 				int accessModifier = ACC_PRIVATE | ACC_STATIC;
 				String firstPart = owner.replace("/", "_") + name;
 				if (!desc.equals(wrapperDesc)) {
-					firstPart+=instanceWrapperSuffix;
+					firstPart += instanceWrapperSuffix;
 				}
 				final String wrapperName = firstPart + wrapperMethodNameSuffix;
 				MethodVisitor mv = cv.visitMethod(accessModifier, wrapperName, wrapperDesc, null, null);
 				// Load all parameters
+
 				List<String> argStrings = splitDescription(wrapperDesc.substring(1, wrapperDesc.lastIndexOf(')')));
 				for (int i = 0; i < argStrings.size(); i++) {
 					String s = argStrings.get(i);
@@ -376,12 +381,21 @@ public class Main {
 				if (opcode == Opcodes.INVOKESTATIC) {
 					// leave desc as is
 				} else {
-					StringBuilder sb = new StringBuilder();
-					sb.append("(L");
-					sb.append(owner);
-					sb.append(";");
-					sb.append(desc.substring(1));
-					wrapperDesc = sb.toString();
+					
+					if (owner.endsWith(";") && (owner.startsWith("L") || owner.startsWith("["))) {
+						//don't touch it.
+						System.err.println("Skipping call to " + owner+"."+name+desc);
+						super.visitMethodInsn(opcode, owner, name, desc, itf);
+						return;
+
+					} else {
+						StringBuilder sb = new StringBuilder();
+						sb.append("(L");
+						sb.append(owner);
+						sb.append(";");
+						sb.append(desc.substring(1));
+						wrapperDesc = sb.toString();
+					}
 				}
 				final String wrappedMethodName = this.containClassVisitor.lookupWrapperMethod(opcode, owner, name, desc,
 						itf, wrapperDesc);

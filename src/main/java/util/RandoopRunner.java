@@ -4,11 +4,8 @@
 package util;
 
 import java.io.File;
-import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
-
-import org.apache.commons.io.FileUtils;
 
 import dynslicer.Main;
 
@@ -24,10 +21,11 @@ public class RandoopRunner extends AbstractRunner{
 	 * off after 'timeSec' seconds.
 	 * @param classPath
 	 * @param classListFile
-	 * @param testDir
-	 * @param timeSec
+	 * @param testSrcDir directory where to write the test source files.
+	 * @param timeSec max time spent on test case generation.
+	 * @param outputLimit max number of tests generated.
 	 */
-	public void run(final String classPath, final File classListFile, final File testDir, final int timeSec, final int outputLimit) {
+	public void run(final String classPath, final File classListFile, final File testSrcDir, final int timeSec, final int outputLimit) {
 		System.out.println("Running Randoop.");
 		
 		List<String> cmd = new LinkedList<String>();
@@ -48,7 +46,7 @@ public class RandoopRunner extends AbstractRunner{
 		cmd.add("--no-regression-tests=true");
 		cmd.add("--npe-on-null-input=ERROR");
 		cmd.add("--npe-on-non-null-input=ERROR");
-		cmd.add("--junit-output-dir="+testDir);			
+		cmd.add("--junit-output-dir="+testSrcDir.getAbsolutePath());			
 		execute(cmd);
 		
 		System.out.println("Compiling test cases.");	
@@ -58,22 +56,6 @@ public class RandoopRunner extends AbstractRunner{
 		cmd.add("-classpath");
 		cmd.add(classPath+File.pathSeparator+Main.basePath+"lib/junit.jar");
 		
-		int generatedFileCount = 0;
-		for (Iterator<File> iter = FileUtils.iterateFiles(testDir, new String[] { "java" }, true); iter
-		.hasNext();) {
-			File testSrcFile = iter.next();
-			cmd.add(testSrcFile.getAbsolutePath());
-			generatedFileCount++;
-		}
-		
-		if (generatedFileCount==0) {
-			throw new RuntimeException("Randoop did not generate any tests. Aborting.");
-		}
-		
-		cmd.add("-d");
-		cmd.add(testDir.getAbsolutePath());
-		execute(cmd);
-		
-		System.out.println("Done.");
+
 	}
 }
