@@ -162,12 +162,15 @@ public class SootSlicer {
 		Iterator<Pair<PptTopLevel, ValueTuple>> iterator = trace.trace.iterator();
 		SootMethod sm = createTraceMethod(iterator, containingClass);
 		addFakeReturn(sm);
+
+		try {
+			sm.getActiveBody().validate();
+		} catch (Exception e) {
+			System.err.println(e.getMessage());
+			System.err.println(newMethod.getActiveBody());
+			throw e;
+		}
 		UnusedLocalEliminator.v().transform(sm.getActiveBody());
-		//
-		// for (Unit u : sm.getActiveBody().getUnits()) {
-		// System.err.println(" " + u);
-		// }
-		sm.getActiveBody().validate();
 		// System.err.println(".......");
 	}
 
@@ -431,19 +434,20 @@ public class SootSlicer {
 						asn.addAllTagsOf(call);
 						newBody.getUnits().add(copySootStmt(asn, substiutionMap));
 					}
-				} else {
+				} else {					
 					int offset = 0;
 					if (callee.getName().contains(instanceWrapperSuffix)) {
 						offset = 1;
 						Value v1 = ((Stmt) call).getInvokeExpr().getArg(0);
 						Value v2 = NullConstant.v();
-						Unit asrt = Jimple.v().newInvokeStmt(
-								Jimple.v().newStaticInvokeExpr(assertMethods.get(RefType.v()).makeRef(), v1, v2));
+						Unit asrt = makeAssertNotEquals(v1, v2);								
 						asrt.addAllTagsOf(call);
 						asrt = copySootStmt(asrt, substiutionMap);
 						newBody.getUnits().add(asrt);
 					} else {
-						newBody.getUnits().add(call);
+//						newBody.getUnits().add(copySootStmt(call, substiutionMap));
+//						throw new RuntimeException();
+						//dont do anything.
 					}
 					// TODO: assert that the current input is illegal.
 					// throw new RuntimeException("throws an ex "+ppt.a.name);
@@ -452,12 +456,11 @@ public class SootSlicer {
 						VarInfo argVar = ppt.a.find_var_by_name("arg" + i);
 						Object argVal = ppt.b.getValueOrNull(argVar);
 						Value v2 = daikonValueToSootValue(argVar, argVal);
-						Verify.verify(v1.getType().equals(v2.getType()));
-						Unit asrt = Jimple.v().newInvokeStmt(
-								Jimple.v().newStaticInvokeExpr(assertMethods.get(v1.getType()).makeRef(), v1, v2));
+
+						Unit asrt = makeAssertNotEquals(v1, v2);
 						asrt.addAllTagsOf(call);
-						asrt = copySootStmt(asrt, substiutionMap);
-						newBody.getUnits().add(asrt);
+
+						newBody.getUnits().add(copySootStmt(asrt, substiutionMap));
 //						System.err.println("adding assertion " + asrt);
 					}
 
@@ -476,6 +479,19 @@ public class SootSlicer {
 
 		return newMethod;
 	}
+	
+	public Unit makeAssertNotEquals(Value v1, Value v2) {
+		soot.Type assertType = v1.getType();
+		if (assertType instanceof RefType) {
+			assertType = RefType.v();
+		}
+		SootMethod assertMethod = assertMethods.get(assertType);
+		Verify.verifyNotNull(assertMethod,"No method of "+v1.getType());
+//TODO: something goes wrong with the locals here
+		Unit asrt = Jimple.v().newInvokeStmt(
+				Jimple.v().newStaticInvokeExpr(assertMethod.makeRef(), v1, v2));
+		return asrt;
+	}
 
 	private Value daikonValueToSootValue(VarInfo vi, Object val) {
 		if (val == null) {
@@ -484,11 +500,18 @@ public class SootSlicer {
 			return IntConstant.v(((Long) val).intValue());
 		} else if (vi.type == ProglangType.LONG_PRIMITIVE || vi.type == ProglangType.LONG_OBJECT) {
 			return LongConstant.v((Long) val);
-		} else if (vi.type == ProglangType.STRING) {
-			return StringConstant.v((String) val);
+		} else if (vi.type == ProglangType.STRING) {			
+			return StringConstant.v(String.valueOf(val));
 		}
 		//TODO ------------------
-		throw new RuntimeException("not implemented for type " + vi.type);
+		System.err.println(this.sm.getName()+ " "+vi.name() + " " + vi.type + " " + val);
+		System.err.println(vi);
+		if (Scene.v().containsClass(vi.type.toString())) {
+			SootClass sc = Scene.v().loadClass(vi.type.toString(), SootClass.SIGNATURES);
+			return Jimple.v().newNewExpr(RefType.v(sc));
+		}
+		
+		throw new RuntimeException("not implemented for type " + vi.type + " of value " + val);
 	}
 
 	private Pair<PptTopLevel, ValueTuple> peekNextPpt(Pair<PptTopLevel, ValueTuple> ppt) {

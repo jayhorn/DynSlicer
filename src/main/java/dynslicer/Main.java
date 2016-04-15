@@ -51,6 +51,7 @@ public class Main {
 			basePath = args[3];
 		}
 		
+		System.out.println("Run Randoop");
 		Set<String> classes = getClasses(classDir);
 		// run randoop
 		File classListFile = null;
@@ -58,7 +59,7 @@ public class Main {
 		try {
 			classListFile = createClassListFile(classes);
 			RandoopRunner rr = new RandoopRunner();
-			rr.run(randoopClassPath, classListFile, testSrcDir, 2, 2);
+			rr.run(randoopClassPath, classListFile, testSrcDir, 5, 5);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
@@ -66,14 +67,16 @@ public class Main {
 				throw new RuntimeException("failed to clean up");
 			}
 		}
+		System.out.println("Completed: Run Randoop");
 				
+		System.out.println("Compile generated tests");
 		//first copy over the classes over to a temp folder:
 		File tempDir = Files.createTempDir();
 		FileUtils.copyDirectory(classDir, tempDir);
 		//compile test cases:
 		final String classPathAndJUnit = classPath + File.pathSeparator + junit;
 		Util.compileJavaFiles(testSrcDir, classPathAndJUnit+ File.pathSeparator + classDir.getAbsolutePath(), tempDir);		
-		
+		System.out.println("Completed: Compile generated tests");
 		
 		System.out.println("Transforming class files");
 		InstrumentationRunner ir = new InstrumentationRunner();
@@ -86,6 +89,7 @@ public class Main {
 //		InstrumentConditionals icond = new InstrumentConditionals();
 //		icond.transformAllClasses(new File(classDir), testDir);
 
+		System.out.println("Running Daikon on transformed classes");
 		DaikonRunner dr = new DaikonRunner();
 		List<String> cp = new LinkedList<String>();
 		cp.add(classPathAndJUnit);
@@ -93,14 +97,17 @@ public class Main {
 		cp.add(testDir.getAbsolutePath());		
 		final String daikonClassPath = StringUtils.join(cp, File.pathSeparator);
 		Set<DaikonTrace> traces = dr.run(daikonClassPath, "ErrorTestDriver", classes);
-
+		System.out.println("Completed: Running Daikon on transformed classes");
 		System.err.println("Number of Traces " + traces.size());
 		
 		// compute the slices and run the fault localization:
 		
+		System.out.println("Computing the slices");
 		SootSlicer ss = new SootSlicer();
 		SootClass traceClass = ss.computeErrorSlices(testDir, daikonClassPath+File.pathSeparator+junit, traces);
+		System.out.println("Completed: Computing the slices");
 		
+		System.out.println("Run the fault localization.");
 		GroupTraces gt = new GroupTraces();
 		gt.groupStuff(traceClass, ss);
 	}

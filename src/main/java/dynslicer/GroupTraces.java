@@ -26,7 +26,6 @@ import soot.jimple.InstanceFieldRef;
 import soot.jimple.Jimple;
 import soot.jimple.NullConstant;
 import soot.jimple.StaticFieldRef;
-import soot.jimple.toolkits.scalar.ConstantPropagatorAndFolder;
 import soot.jimple.toolkits.scalar.CopyPropagator;
 import util.SootSlicer;
 
@@ -45,7 +44,7 @@ public class GroupTraces {
 		for (SootMethod sm : traceClass.getMethods()) {
 			if (!sm.isConstructor() && !sm.getName().contains(SootSlicer.assertionMethodName)) {
 				CopyPropagator.v().transform(sm.getActiveBody());
-				ConstantPropagatorAndFolder.v().transform(sm.getActiveBody());
+//				ConstantPropagatorAndFolder.v().transform(sm.getActiveBody());
 				replaceFieldsByLocals(sm);
 				trans.transform(sm.getActiveBody());
 			}
@@ -94,10 +93,7 @@ public class GroupTraces {
 					if (assertType instanceof RefType) {
 						assertType = RefType.v();
 					}
-					SootMethod assertMethod = sootSlicer.assertMethods.get(assertType);
-					Verify.verifyNotNull(assertMethod,"No method of "+l.getType());
-					Unit asrt = Jimple.v().newInvokeStmt(							
-							Jimple.v().newStaticInvokeExpr(assertMethod.makeRef(), l, NullConstant.v()));
+					Unit asrt = sootSlicer.makeAssertNotEquals(l, NullConstant.v());
 					asrt.addAllTagsOf(u);
 					sm.getActiveBody().getUnits().insertBefore(asrt, u);					
 					vb.setValue(lrepl.get(r.getField()));
