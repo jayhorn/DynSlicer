@@ -71,9 +71,7 @@ public class Main {
 					ClassReader cr = new ClassReader(is);
 					applicationClassNames.add(cr.getClassName());
 					final String className = cr.getClassName().replace('/', '.');
-					System.err.println("loading class " + className);
 					cl.loadClass(className);
-					System.err.println("done ");
 				} catch (Exception e) {
 					e.printStackTrace(System.err);
 				}

@@ -58,7 +58,7 @@ public class Main {
 		try {
 			classListFile = createClassListFile(classes);
 			RandoopRunner rr = new RandoopRunner();
-			rr.run(randoopClassPath, classListFile, testSrcDir, 1, 2);
+			rr.run(randoopClassPath, classListFile, testSrcDir, 2, 2);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
@@ -102,7 +102,7 @@ public class Main {
 		SootClass traceClass = ss.computeErrorSlices(testDir, daikonClassPath+File.pathSeparator+junit, traces);
 		
 		GroupTraces gt = new GroupTraces();
-		gt.groupStuff(traceClass);
+		gt.groupStuff(traceClass, ss);
 	}
 
 	private static File createClassListFile(Set<String> classes) throws IOException {

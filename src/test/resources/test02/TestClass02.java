@@ -14,6 +14,7 @@ public class TestClass02 {
 	}
 	
 	String s;
+	String y;
 	
 //	public int test01(int x, String s) { 
 //		return test01(x);
@@ -25,11 +26,13 @@ public class TestClass02 {
 		} catch (Throwable e) {
 //			e.printStackTrace();
 		}
+		y = "cool";
 		return s.length();
 	}
 
 	private String foo(int x) {
 		if (x>0) {
+			y = " fuckkk";
 			throw new RuntimeException("bye");
 		}
 		return "Hello";

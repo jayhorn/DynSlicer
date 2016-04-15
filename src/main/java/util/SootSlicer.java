@@ -22,6 +22,8 @@ import daikon.VarInfo;
 import daikon.VarInfo.VarKind;
 import daikon.util.Pair;
 import soot.Body;
+import soot.BooleanType;
+import soot.ByteType;
 import soot.CharType;
 import soot.DoubleType;
 import soot.FloatType;
@@ -34,6 +36,7 @@ import soot.PrimType;
 import soot.RefLikeType;
 import soot.RefType;
 import soot.Scene;
+import soot.ShortType;
 import soot.SootClass;
 import soot.SootField;
 import soot.SootMethod;
@@ -79,7 +82,7 @@ public class SootSlicer {
 	public static final String instanceWrapperSuffix = "__HASBASE__";
 	public static final String assertionMethodName = "my_Assert";
 
-	private Map<soot.Type, SootMethod> assertMethods = new HashMap<soot.Type, SootMethod>();
+	public Map<soot.Type, SootMethod> assertMethods = new HashMap<soot.Type, SootMethod>();
 
 	public static void main(String[] args) {
 		// For testing only!
@@ -455,7 +458,7 @@ public class SootSlicer {
 						asrt.addAllTagsOf(call);
 						asrt = copySootStmt(asrt, substiutionMap);
 						newBody.getUnits().add(asrt);
-						System.err.println("adding assertion " + asrt);
+//						System.err.println("adding assertion " + asrt);
 					}
 
 				}
@@ -484,6 +487,7 @@ public class SootSlicer {
 		} else if (vi.type == ProglangType.STRING) {
 			return StringConstant.v((String) val);
 		}
+		//TODO ------------------
 		throw new RuntimeException("not implemented for type " + vi.type);
 	}
 
@@ -694,6 +698,12 @@ public class SootSlicer {
 			t = LongType.v();
 		} else if ("char".equals(s)) {
 			t = CharType.v();
+		} else if ("boolean".equals(s)) {
+			t = BooleanType.v();
+		} else if ("short".equals(s)) {
+			t = ShortType.v();
+		} else if ("byte".equals(s)) {
+			t = ByteType.v();			
 		} else {
 			t = Scene.v().getRefType(s);
 		}

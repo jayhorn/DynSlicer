@@ -41,7 +41,7 @@ public class DaikonRunner extends AbstractRunner {
 		sb.append(")\\S*");
 //		sb.append("--ppt-select-pattern=\"\\S*\"");
 		String inclusionRegex = sb.toString();
-		System.err.println(inclusionRegex);
+//		System.err.println(inclusionRegex);
 		cmd.add(inclusionRegex);
 		
 //		cmd.add("--dtrace-file=ErrorTestDriver.dtrace");
