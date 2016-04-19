@@ -85,6 +85,15 @@ public class SootSlicer {
 
 	public Map<soot.Type, SootMethod> assertMethods = new HashMap<soot.Type, SootMethod>();
 
+	private SootMethod newMethod;
+	private SootMethod sm;
+	private Body body;
+	private int newLocalCounter = 0;
+
+	final Stack<String> pcMethodStack = new Stack<String>();
+	private boolean haveToPushToPcStack = false;
+
+	
 	public static void main(String[] args) {
 		// For testing only!
 		SootSlicer sc = new SootSlicer();
@@ -93,6 +102,8 @@ public class SootSlicer {
 	}
 
 	public static int slicerErrors = 0;
+	
+	
 	
 	/**
 	 * Returns a soot class that contains one method per trace. Each method
@@ -127,11 +138,17 @@ public class SootSlicer {
 				computeErrorSlice(t, myClass);
 			} catch (Throwable e) {
 				slicerErrors++;
-				e.printStackTrace(System.err);
+				e.printStackTrace(System.err);					
 			}
+			resetFields();
 		}
-
 		return myClass;
+	}
+	
+	private void resetFields() {
+		newMethod = null; sm = null; body = null;
+		newLocalCounter = 0;
+		pcMethodStack.clear();	
 	}
 
 	private SootMethod makeAssertMethod(SootClass myClass, soot.Type type) {
@@ -238,13 +255,6 @@ public class SootSlicer {
 		return newMethod;
 	}
 
-	private SootMethod newMethod;
-	private SootMethod sm;
-	private Body body;
-
-	final Stack<String> pcMethodStack = new Stack<String>();
-
-	private boolean haveToPushToPcStack = false;
 
 	private SootMethod createTraceMethod(Iterator<Pair<PptTopLevel, ValueTuple>> iterator,
 			final SootClass containingClass) {
@@ -530,7 +540,6 @@ public class SootSlicer {
 		throw new RuntimeException("not implemented for type " + vi.type + " of value " + val);
 	}
 	
-	private int newLocalCounter = 0;
 
 	private Pair<PptTopLevel, ValueTuple> peekNextPpt(Pair<PptTopLevel, ValueTuple> ppt) {
 		return peekNextPpt(ppt, 0);

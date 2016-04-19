@@ -82,6 +82,12 @@ public class GroupTraces {
 		System.err.println("Number of buckets: " +  map.size());
 		for (Entry<String, List<LocalizedTrace>> entry : map.entrySet()) {
 			System.err.println("\tBucket of size: " + entry.getValue().size());
+			if (!entry.getValue().isEmpty()) {
+				System.err.println("\tSignature:");
+				for (String s : entry.getValue().iterator().next().getRelevantStatements()) {
+					System.err.println("\t   "+s);
+				}
+			}
 			StringBuilder sb = new StringBuilder();
 			for (LocalizedTrace tr : entry.getValue()) {
 				sb.append(tr.getMethodName());
