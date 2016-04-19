@@ -5,7 +5,9 @@ package dynslicer;
 
 import java.util.HashMap;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 
 import org.joogie.GlobalsCache;
 import org.joogie.report.Report;
@@ -14,6 +16,7 @@ import org.joogie.soot.SootBodyTransformer;
 import com.google.common.base.Verify;
 
 import boogie.ProgramFactory;
+import joogie2.LocalizedTrace;
 import joogie2.ProgramAnalysis;
 import soot.Local;
 import soot.RefType;
@@ -40,22 +43,52 @@ public class GroupTraces {
 		sootSlicer = ss;
 		Report report = new Report();
 		SootBodyTransformer trans = new SootBodyTransformer(report);
+		int traceCtr = 0;
 		for (SootMethod sm : traceClass.getMethods()) {
 			if (!sm.isConstructor() && !sm.getName().contains(SootSlicer.assertionMethodName)) {
 //				CopyPropagator.v().transform(sm.getActiveBody());
 //				ConstantPropagatorAndFolder.v().transform(sm.getActiveBody());
-				replaceFieldsByLocals(sm);
-				
+				replaceFieldsByLocals(sm);				
 				trans.transform(sm.getActiveBody());
-				System.err.println(sm.getActiveBody().toString());
+				traceCtr++;
 			}
 		}
-				
+		
 		ProgramFactory pf = GlobalsCache.v().getPf();
 		ProgramAnalysis pa = new ProgramAnalysis(pf, report);
 		pa.CavModeHack = false;
 		org.joogie.Options.v().useOldStyleEncoding(true);
+		org.joogie.Options.v().setTimeOut(60);
 		pa.runFullProgramAnalysis();
+		
+		List<LocalizedTrace> locTraces = new LinkedList<LocalizedTrace>(ProgramAnalysis.localizedTraces);
+		System.err.println("Failed slice attempts: " +  SootSlicer.slicerErrors);
+		System.err.println("Total number of traces: " +  traceCtr);
+		System.err.println("Total number of localized traces: " + locTraces.size() );
+		Map<String, List<LocalizedTrace>> map = new HashMap<String, List<LocalizedTrace>>();
+		int satTraces = 0;
+		for (LocalizedTrace lt : locTraces) {
+			if (lt.getLocalizationSat()) {
+				satTraces++;
+				continue;
+			}
+			if (!map.containsKey(lt.getHashString())) {
+				map.put(lt.getHashString(), new LinkedList<LocalizedTrace>());				
+			}
+			map.get(lt.getHashString()).add(lt);
+		}
+		System.err.println("Total number of traces w/o localization: " +  satTraces);
+		System.err.println("Number of traces that could be put in buckets: " + (locTraces.size()-satTraces) );
+		System.err.println("Number of buckets: " +  map.size());
+		for (Entry<String, List<LocalizedTrace>> entry : map.entrySet()) {
+			System.err.println("\tBucket of size: " + entry.getValue().size());
+			StringBuilder sb = new StringBuilder();
+			for (LocalizedTrace tr : entry.getValue()) {
+				sb.append(tr.getMethodName());
+				sb.append(", ");
+			}
+			System.err.println("\t"+sb.toString());
+		}
 	}
 	
 	

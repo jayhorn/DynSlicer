@@ -92,6 +92,8 @@ public class SootSlicer {
 		sc.computeErrorSlices(new File(args[0]), args[1], dr.parseDTraceFile("ErrorTestDriver.dtrace"));
 	}
 
+	public static int slicerErrors = 0;
+	
 	/**
 	 * Returns a soot class that contains one method per trace. Each method
 	 * contains the sequence of statements executed on that trace.
@@ -121,7 +123,12 @@ public class SootSlicer {
 		assertMethods.put(LongType.v(), makeAssertMethod(myClass, LongType.v()));
 
 		for (DaikonTrace t : traces) {
-			computeErrorSlice(t, myClass);
+			try {
+				computeErrorSlice(t, myClass);
+			} catch (Throwable e) {
+				slicerErrors++;
+				e.printStackTrace(System.err);
+			}
 		}
 
 		return myClass;

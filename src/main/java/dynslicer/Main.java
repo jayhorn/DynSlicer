@@ -44,11 +44,11 @@ public class Main {
 		}
 		final File testSrcDir = new File("./testSources/");
 		
-		final String junit = basePath+"lib/junit.jar";
-		
 		if (args.length == 4) {
 			basePath = args[3];
 		}
+
+		final String junit = basePath+"lib/junit.jar";
 		
 		System.out.println("Run Randoop");
 		Set<String> classes = getClasses(classDir);
@@ -58,7 +58,7 @@ public class Main {
 		try {
 			classListFile = createClassListFile(classes);
 			RandoopRunner rr = new RandoopRunner();
-			rr.run(randoopClassPath, classListFile, testSrcDir, 2, 2);
+			rr.run(randoopClassPath, classListFile, testSrcDir, 10, 100);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
