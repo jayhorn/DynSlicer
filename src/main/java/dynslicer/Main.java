@@ -38,12 +38,11 @@ public class Main {
 		}
 		String classPath = args[0];
 		final File classDir = new File(args[1]);
-		final File testDir = new File("./PlayItSafeFolderName/");
-		final File testSrcDir = new File("./testSources/");
-		
+		final File testDir = new File("./PlayItSafeFolderName/");		
 		if (testDir.exists()) {
 			FileUtils.deleteDirectory(testDir);
 		}
+		final File testSrcDir = new File("./testSources/");
 		
 		final String junit = basePath+"lib/junit.jar";
 		
@@ -59,7 +58,7 @@ public class Main {
 		try {
 			classListFile = createClassListFile(classes);
 			RandoopRunner rr = new RandoopRunner();
-			rr.run(randoopClassPath, classListFile, testSrcDir, 5, 5);
+			rr.run(randoopClassPath, classListFile, testSrcDir, 2, 2);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {

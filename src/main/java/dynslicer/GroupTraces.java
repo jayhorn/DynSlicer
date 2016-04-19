@@ -26,7 +26,6 @@ import soot.jimple.InstanceFieldRef;
 import soot.jimple.Jimple;
 import soot.jimple.NullConstant;
 import soot.jimple.StaticFieldRef;
-import soot.jimple.toolkits.scalar.CopyPropagator;
 import util.SootSlicer;
 
 /**
@@ -43,10 +42,12 @@ public class GroupTraces {
 		SootBodyTransformer trans = new SootBodyTransformer(report);
 		for (SootMethod sm : traceClass.getMethods()) {
 			if (!sm.isConstructor() && !sm.getName().contains(SootSlicer.assertionMethodName)) {
-				CopyPropagator.v().transform(sm.getActiveBody());
+//				CopyPropagator.v().transform(sm.getActiveBody());
 //				ConstantPropagatorAndFolder.v().transform(sm.getActiveBody());
 				replaceFieldsByLocals(sm);
+				
 				trans.transform(sm.getActiveBody());
+				System.err.println(sm.getActiveBody().toString());
 			}
 		}
 				

@@ -31,6 +31,7 @@ import soot.IntType;
 import soot.Local;
 import soot.LongType;
 import soot.Modifier;
+import soot.NullType;
 import soot.PatchingChain;
 import soot.PrimType;
 import soot.RefLikeType;
@@ -427,9 +428,8 @@ public class SootSlicer {
 								break;
 							}
 						}
-						Verify.verifyNotNull(retVi);
-						Object retVal = ppt.b.getValueOrNull(retVi);
-						Value rhs = daikonValueToSootValue(retVi, retVal);
+						Verify.verifyNotNull(retVi);						
+						Value rhs = daikonValueToSootValue(retVi, ppt, newBody);
 						Unit asn = Jimple.v().newAssignStmt(((DefinitionStmt) call).getLeftOp(), rhs);
 						asn.addAllTagsOf(call);
 						newBody.getUnits().add(copySootStmt(asn, substiutionMap));
@@ -454,13 +454,14 @@ public class SootSlicer {
 					for (int i = offset; i < ((Stmt) call).getInvokeExpr().getArgCount(); i++) {
 						Value v1 = ((Stmt) call).getInvokeExpr().getArg(i);
 						VarInfo argVar = ppt.a.find_var_by_name("arg" + i);
-						Object argVal = ppt.b.getValueOrNull(argVar);
-						Value v2 = daikonValueToSootValue(argVar, argVal);
-
-						Unit asrt = makeAssertNotEquals(v1, v2);
-						asrt.addAllTagsOf(call);
-
-						newBody.getUnits().add(copySootStmt(asrt, substiutionMap));
+						Value v2 = daikonValueToSootValue(argVar, ppt, newBody);
+						if (v1.equals(v2)) {
+							System.err.println("Not adding "+v1+"!="+v2 + " beause its trivial");
+						} else {
+							Unit asrt = makeAssertNotEquals(v1, v2);
+							asrt.addAllTagsOf(call);	
+							newBody.getUnits().add(copySootStmt(asrt, substiutionMap));
+						}
 //						System.err.println("adding assertion " + asrt);
 					}
 
@@ -482,7 +483,7 @@ public class SootSlicer {
 	
 	public Unit makeAssertNotEquals(Value v1, Value v2) {
 		soot.Type assertType = v1.getType();
-		if (assertType instanceof RefType) {
+		if (assertType instanceof RefLikeType) {
 			assertType = RefType.v();
 		}
 		SootMethod assertMethod = assertMethods.get(assertType);
@@ -493,26 +494,36 @@ public class SootSlicer {
 		return asrt;
 	}
 
-	private Value daikonValueToSootValue(VarInfo vi, Object val) {
+	private Value daikonValueToSootValue(VarInfo vi, Pair<PptTopLevel, ValueTuple> ppt, Body newBody) {
+		Object val = ppt.b.getValueOrNull(vi);
 		if (val == null) {
 			return NullConstant.v();
 		} else if (vi.type == ProglangType.INT || vi.type == ProglangType.BOOLEAN || vi.type == ProglangType.CHAR) {
 			return IntConstant.v(((Long) val).intValue());
 		} else if (vi.type == ProglangType.LONG_PRIMITIVE || vi.type == ProglangType.LONG_OBJECT) {
 			return LongConstant.v((Long) val);
-		} else if (vi.type == ProglangType.STRING) {			
+		} else if (vi.type == ProglangType.STRING) {
+			VarInfo vi_str = ppt.a.find_var_by_name(vi.name()+".toString");
+			val = ppt.b.getValueOrNull(vi_str);
 			return StringConstant.v(String.valueOf(val));
 		}
-		//TODO ------------------
-		System.err.println(this.sm.getName()+ " "+vi.name() + " " + vi.type + " " + val);
-		System.err.println(vi);
+
+		
+//		System.err.println(this.sm.getName()+ " "+vi.name() + " " + vi.type + " " + val);
+//		System.err.println(vi);
 		if (Scene.v().containsClass(vi.type.toString())) {
 			SootClass sc = Scene.v().loadClass(vi.type.toString(), SootClass.SIGNATURES);
-			return Jimple.v().newNewExpr(RefType.v(sc));
+			Local newlocal = Jimple.v().newLocal("newLocal_"+(newLocalCounter++), RefType.v(sc));
+			newBody.getLocals().add(newlocal);
+			newBody.getUnits().add(Jimple.v().newAssignStmt(newlocal, Jimple.v().newNewExpr(RefType.v(sc))));
+			//TODO ------------------
+			return newlocal;
 		}
 		
 		throw new RuntimeException("not implemented for type " + vi.type + " of value " + val);
 	}
+	
+	private int newLocalCounter = 0;
 
 	private Pair<PptTopLevel, ValueTuple> peekNextPpt(Pair<PptTopLevel, ValueTuple> ppt) {
 		return peekNextPpt(ppt, 0);
@@ -591,6 +602,10 @@ public class SootSlicer {
 		// Add all the locals from sm to newMethod
 		for (Local l : body.getLocals()) {
 			if (!substiutionMap.containsKey(l)) {
+				if (l.getType() instanceof NullType) {
+					System.out.println("ignoring local "+l.getName() + " because it doesn't have a type");
+					continue;
+				}
 				Local newLocal = Jimple.v().newLocal(sm.getName() + "_" + l.getName(), l.getType());
 				substiutionMap.put(l, newLocal);
 				newMethod.getActiveBody().getLocals().add(newLocal);

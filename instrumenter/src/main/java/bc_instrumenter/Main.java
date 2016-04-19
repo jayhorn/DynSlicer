@@ -134,7 +134,6 @@ public class Main {
 			PrintWriter pw = new PrintWriter(sw);
 			CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false, pw);
 			Verify.verify(sw.toString().length() == 0, sw.toString());
-			// System.err.println(sw.toString());
 			fos.write(cw.toByteArray());
 		} catch (IOException e) {
 			e.printStackTrace(System.err);
@@ -143,7 +142,11 @@ public class Main {
 
 	static class ClassRewriter extends ClassVisitor implements Opcodes {
 
-		protected String className;
+		protected String className, superName;
+
+		public final String getSuperName() {
+			return this.superName;
+		}
 
 		public ClassRewriter(final ClassVisitor cv) {
 			super(ASM5, cv);
@@ -153,6 +156,7 @@ public class Main {
 		public void visit(int version, int access, String name, String signature, String superName,
 				String[] interfaces) {
 			className = name;
+			this.superName = superName;
 			cv.visit(version, access, name, signature, superName, interfaces);
 		}
 
@@ -160,7 +164,7 @@ public class Main {
 		public MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
 			MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
 			final String pcMethodName = createProgramCounterMethod(name, desc);
-			return new MethodAdapter(mv, className, pcMethodName, this);
+			return new MethodAdapter(mv, className, name, pcMethodName, this);
 		}
 
 		// @Override
@@ -227,13 +231,25 @@ public class Main {
 
 			if (!foobar.containsKey(signature)) {
 				int accessModifier = ACC_PRIVATE | ACC_STATIC;
-				String firstPart = owner.replace("/", "_") + name;
+				String firstPart = owner.replace("/", "_") + name.replace("<", "_").replace(">", "_");
 				if (!desc.equals(wrapperDesc)) {
 					firstPart += instanceWrapperSuffix;
 				}
 				final String wrapperName = firstPart + wrapperMethodNameSuffix;
 				MethodVisitor mv = cv.visitMethod(accessModifier, wrapperName, wrapperDesc, null, null);
 				// Load all parameters
+
+				final String retString = wrapperDesc.substring(wrapperDesc.lastIndexOf(')') + 1);
+
+//				if (opcode == Opcodes.INVOKESPECIAL) {
+//					// if this is a constructor, add the new statement as well
+//					// to keep the bytecode verifier happy.
+//					Verify.verify(retString.startsWith("L") && retString.endsWith(";"), "Can't handle " + retString);
+//					final String tname = retString.substring(1, retString.length() - 1);
+//					System.out.println("Hello " + tname);
+//					mv.visitTypeInsn(Opcodes.NEW, tname);
+//					mv.visitInsn(Opcodes.DUP);
+//				}
 
 				List<String> argStrings = splitDescription(wrapperDesc.substring(1, wrapperDesc.lastIndexOf(')')));
 				for (int i = 0; i < argStrings.size(); i++) {
@@ -262,10 +278,10 @@ public class Main {
 						throw new RuntimeException("Unknown type signature " + s);
 					}
 				}
+
 				// call the original method.
 				mv.visitMethodInsn(opcode, owner, name, desc, itf);
 
-				String retString = wrapperDesc.substring(wrapperDesc.lastIndexOf(')') + 1);
 				if ("B".equals(retString)) { // signed byte
 					mv.visitInsn(Opcodes.IRETURN); // TODO is that true?
 				} else if ("C".equals(retString)) { // char
@@ -313,13 +329,15 @@ public class Main {
 
 		private int instCounter = 0;
 
-		protected final String className, pcMethodName;
+		protected final String className, pcMethodName, methodName;
 		protected final ClassRewriter containClassVisitor;
 
-		public MethodAdapter(MethodVisitor mv, String className, String pcMethodName, ClassRewriter cv) {
+		public MethodAdapter(MethodVisitor mv, String className, String methodName, String pcMethodName,
+				ClassRewriter cv) {
 			super(ASM5, mv);
 			this.className = className;
 			this.pcMethodName = pcMethodName;
+			this.methodName = methodName;
 			this.containClassVisitor = cv;
 		}
 
@@ -359,14 +377,21 @@ public class Main {
 			super.visitFieldInsn(opcode, owner, name, desc);
 		}
 
+		private boolean mustNotBeWrapped(String owner, String name) {
+//			if (!this.methodName.equals("<init>")) {
+//				System.err.println("Only wrapping in constructor " + owner + "." + name);
+//				return false;
+//			}
+			return "<init>".equals(name);
+		}
+
 		@Override
 		public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
-			// TODO Auto-generated method stub
 			sampleInstCounter();
 			if (applicationClassNames.contains(owner)) {
 				super.visitMethodInsn(opcode, owner, name, desc, itf);
 				return;
-			} else if (!applicationClassNames.contains(owner) && "<init>".equals(name)) {
+			} else if (mustNotBeWrapped(owner, name)) {
 				// don't wrap constructors because of this
 				// "Type uninitialized 0 (current frame, stack[1]) is not
 				// assignable to ..."
@@ -385,14 +410,23 @@ public class Main {
 						System.err.println("Skipping call to " + owner+"."+name+desc);
 						super.visitMethodInsn(opcode, owner, name, desc, itf);
 						return;
-
+//					} else if (opcode == Opcodes.INVOKESPECIAL && name.equals("<init>")) {
+						//DO NOTHING FOR NOW.
+//						Verify.verify(wrapperDesc.endsWith(")V"));
+//						StringBuilder sb = new StringBuilder();
+//						sb.append(wrapperDesc.substring(0, wrapperDesc.length()-1));
+//						sb.append("L");
+//						sb.append(owner);
+//						sb.append(";");
+//						wrapperDesc = sb.toString();
+//						System.err.println("New wrapper desc: " + wrapperDesc);
 					} else {
-						StringBuilder sb = new StringBuilder();
+						StringBuilder sb = new StringBuilder();	
 						sb.append("(L");
 						sb.append(owner);
 						sb.append(";");
 						sb.append(desc.substring(1));
-						wrapperDesc = sb.toString();
+						wrapperDesc = sb.toString();						
 					}
 				}
 				final String wrappedMethodName = this.containClassVisitor.lookupWrapperMethod(opcode, owner, name, desc,
@@ -400,69 +434,51 @@ public class Main {
 				super.visitMethodInsn(Opcodes.INVOKESTATIC, className, wrappedMethodName, wrapperDesc, false);
 				return;
 			}
-		}
-
-		@Override
-		public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
-			// TODO Auto-generated method stub
-			sampleInstCounter();
-			super.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
-		}
-
-		@Override
-		public void visitLdcInsn(Object cst) {
-			sampleInstCounter();
-			super.visitLdcInsn(cst);
-		}
-
-		@Override
-		public void visitIincInsn(int var, int increment) {
-			sampleInstCounter();
-			super.visitIincInsn(var, increment);
-		}
-
-		@Override
-		public void visitMultiANewArrayInsn(String desc, int dims) {
-			sampleInstCounter();
-			super.visitMultiANewArrayInsn(desc, dims);
-		}
-
-		@Override
-		public void visitTableSwitchInsn(int min, int max, Label dflt, Label... labels) {
-			sampleInstCounter();
-			super.visitTableSwitchInsn(min, max, dflt, labels);
-		}
-
-		@Override
-		public void visitLookupSwitchInsn(Label dflt, int[] keys, Label[] labels) {
-			sampleInstCounter();
-			super.visitLookupSwitchInsn(dflt, keys, labels);
-		}
-
-		@Override
-		public void visitJumpInsn(int opcode, Label label) {
-			sampleInstCounter();
-			super.visitJumpInsn(opcode, label);
-			// Preconditions.checkNotNull(this.className);
-			// if (opcode==Opcodes.GOTO) {
-			// return; //Don't do goto's
-			// }
-			// final Label thenLabel = new Label();
-			// final Label joinLabel = new Label();
-			// // visit the old jump instruction
-			// super.visitJumpInsn(opcode, thenLabel);
-			// // else block (note that in bytecode the else comes first)
-			// super.visitInsn(Opcodes.ICONST_1);
-			// super.visitJumpInsn(Opcodes.GOTO, joinLabel);
-			// super.visitLabel(thenLabel);
-			// //then block
-			// super.visitInsn(Opcodes.ICONST_0);
-			// super.visitLabel(joinLabel);
-			// super.visitMethodInsn(INVOKESTATIC, className,
-			// conditionalMethodName, "(Z)Z", false);
-			// super.visitJumpInsn(Opcodes.IFEQ, label);
-		}
-
 	}
+
+	@Override
+	public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
+		// TODO Auto-generated method stub
+		sampleInstCounter();
+		super.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
+	}
+
+	@Override
+	public void visitLdcInsn(Object cst) {
+		sampleInstCounter();
+		super.visitLdcInsn(cst);
+	}
+
+	@Override
+	public void visitIincInsn(int var, int increment) {
+		sampleInstCounter();
+		super.visitIincInsn(var, increment);
+	}
+
+	@Override
+	public void visitMultiANewArrayInsn(String desc, int dims) {
+		sampleInstCounter();
+		super.visitMultiANewArrayInsn(desc, dims);
+	}
+
+	@Override
+	public void visitTableSwitchInsn(int min, int max, Label dflt, Label... labels) {
+		sampleInstCounter();
+		super.visitTableSwitchInsn(min, max, dflt, labels);
+	}
+
+	@Override
+	public void visitLookupSwitchInsn(Label dflt, int[] keys, Label[] labels) {
+		sampleInstCounter();
+		super.visitLookupSwitchInsn(dflt, keys, labels);
+	}
+
+	@Override
+	public void visitJumpInsn(int opcode, Label label) {
+		sampleInstCounter();
+		super.visitJumpInsn(opcode, label);
+	}
+
+}
 
 }
