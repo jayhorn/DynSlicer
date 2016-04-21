@@ -26,6 +26,11 @@ public class DaikonRunner extends AbstractRunner {
 
 	public Set<DaikonTrace> run(String classPath, String mainClass, Set<String> classesToInclude) {
 		// Run Daikon
+		final File dtraceFileName = new File(mainClass + ".dtrace.gz");
+		if (dtraceFileName.exists()) {
+			dtraceFileName.delete();
+		}
+		
 		List<String> cmd = new LinkedList<String>();
 		cmd.add("java");
 		cmd.add("-classpath");
@@ -49,13 +54,13 @@ public class DaikonRunner extends AbstractRunner {
 		execute(cmd);
 		
 		// gunzip the dtrace file
-		cmd = new LinkedList<String>();
-		cmd.add("gunzip");
-		cmd.add("-f");
-		cmd.add(mainClass + ".dtrace.gz");
-		execute(cmd);
+//		cmd = new LinkedList<String>();
+//		cmd.add("gunzip");
+//		cmd.add("-f");
+//		cmd.add(dtraceFileName.getName());
+//		execute(cmd);
 
-		return parseDTraceFile(mainClass + ".dtrace");
+		return parseDTraceFile(dtraceFileName.getAbsolutePath());
 	}
 
 	private Set<String> getNamespacesFromClasses(Set<String> classNames) {

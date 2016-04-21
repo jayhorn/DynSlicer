@@ -17,8 +17,6 @@ import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.objectweb.asm.ClassReader;
 
-import com.google.common.io.Files;
-
 import soot.SootClass;
 import util.DaikonRunner;
 import util.DaikonRunner.DaikonTrace;
@@ -44,9 +42,20 @@ public class Main {
 		}
 		final File testSrcDir = new File("./testSources/");
 		
-		if (args.length == 4) {
+		if (args.length >= 4) {
 			basePath = args[3];
 		}
+		
+		int timeLimit = 2;
+		int testLimit = 2;
+		if (args.length >= 5) {
+			timeLimit = Integer.parseInt(args[4]);
+		}
+		
+		if (args.length >= 6) {
+			testLimit = Integer.parseInt(args[5]);
+		}
+
 
 		final String junit = basePath+"lib/junit.jar";
 		
@@ -58,7 +67,7 @@ public class Main {
 		try {
 			classListFile = createClassListFile(classes);
 			RandoopRunner rr = new RandoopRunner();
-			rr.run(randoopClassPath, classListFile, testSrcDir, 1, 2);
+			rr.run(randoopClassPath, classListFile, testSrcDir, timeLimit, testLimit);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
@@ -70,7 +79,9 @@ public class Main {
 				
 		System.out.println("Compile generated tests");
 		//first copy over the classes over to a temp folder:
-		File tempDir = Files.createTempDir();
+//		final File tempDir = Files.createTempDir();
+		final File tempDir = new File("./testClasses/");
+		FileUtils.deleteDirectory(tempDir);
 		FileUtils.copyDirectory(classDir, tempDir);
 		//compile test cases:
 		final String classPathAndJUnit = classPath + File.pathSeparator + junit;
@@ -82,7 +93,7 @@ public class Main {
 		final String instrumentClassPath = classPathAndJUnit + File.pathSeparator + tempDir.getAbsolutePath();
 		ir.run(tempDir, testDir, instrumentClassPath);
 		//now the instrumented classes and tests are in testDir and we can delete tempDir
-		FileUtils.deleteDirectory(tempDir);
+//		FileUtils.deleteDirectory(tempDir);
 		System.out.println("Transformation done.");
 		
 //		InstrumentConditionals icond = new InstrumentConditionals();

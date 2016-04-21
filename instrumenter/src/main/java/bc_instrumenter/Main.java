@@ -90,7 +90,8 @@ public class Main {
 					}
 				}
 				try {
-					instrumentClass(classFile.getAbsolutePath(), transformedClass.getAbsolutePath());					
+					instrumentClass(classFile.getAbsolutePath(), transformedClass.getAbsolutePath());
+					System.out.println("Transformed classes  " + classFile.getAbsolutePath());
 				} catch (Exception e) {
 					System.err
 							.println("Failed to transform " + classFile.getAbsolutePath() + " :\n\t" + e.getMessage());
@@ -101,7 +102,7 @@ public class Main {
 			if (failed) {
 				// throw new RuntimeException("FAILED");
 			}
-			
+
 		} catch (MalformedURLException e) {
 			throw new RuntimeException(e.getMessage());
 		} catch (IOException e) {
@@ -126,9 +127,8 @@ public class Main {
 	public void instrumentClass(final String inFile, final String outFile) {
 		try (FileInputStream is = new FileInputStream(inFile); FileOutputStream fos = new FileOutputStream(outFile);) {
 			ClassReader cr = new ClassReader(is);
-			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES);
+			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS );			
 			cr.accept(new ClassRewriter(cw), 0);
-
 			StringWriter sw = new StringWriter();
 			PrintWriter pw = new PrintWriter(sw);
 			CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false, pw);
@@ -212,7 +212,7 @@ public class Main {
 				} else if (c == '[') {
 					s += c; // do not add to ret yet.
 					continue;
-				} else {					
+				} else {
 					throw new RuntimeException(
 							"Don't know type " + c + " between " + desc.substring(0, i) + " and " + desc.substring(i));
 				}
@@ -239,38 +239,49 @@ public class Main {
 
 				final String retString = wrapperDesc.substring(wrapperDesc.lastIndexOf(')') + 1);
 
-				if (opcode == Opcodes.INVOKESPECIAL) {
-					// if this is a constructor, add the new statement as well
-					// to keep the bytecode verifier happy.
-					Verify.verify(retString.startsWith("L") && retString.endsWith(";"), "Can't handle " + retString);
-					final String tname = retString.substring(1, retString.length() - 1);					
-					mv.visitTypeInsn(Opcodes.NEW, tname);
-					mv.visitInsn(Opcodes.DUP);
-				}
+//				if (opcode == Opcodes.INVOKESPECIAL) {
+//					// if this is a constructor, add the new statement as well
+//					// to keep the bytecode verifier happy.
+//					Verify.verify(retString.startsWith("L") && retString.endsWith(";"), "Can't handle " + retString);
+//					final String tname = retString.substring(1, retString.length() - 1);
+//					mv.visitTypeInsn(Opcodes.NEW, tname);
+//					mv.visitInsn(Opcodes.DUP);
+//				}
 
 				List<String> argStrings = splitDescription(wrapperDesc.substring(1, wrapperDesc.lastIndexOf(')')));
+				int pos = 0;
 				for (int i = 0; i < argStrings.size(); i++) {
 					String s = argStrings.get(i);
 					if ("B".equals(s)) { // signed byte
-						mv.visitVarInsn(Opcodes.ILOAD, i);
+						mv.visitVarInsn(Opcodes.ILOAD, pos);
+						pos++;
 					} else if ("C".equals(s)) { // char
-						mv.visitVarInsn(Opcodes.ILOAD, i);
+						mv.visitVarInsn(Opcodes.ILOAD, pos);
+						pos++;
 					} else if ("D".equals(s)) { // double
-						mv.visitVarInsn(Opcodes.DLOAD, i);
+						mv.visitVarInsn(Opcodes.DLOAD, pos);
+						pos+=2;
 					} else if ("F".equals(s)) { // float
-						mv.visitVarInsn(Opcodes.FLOAD, i);
+						mv.visitVarInsn(Opcodes.FLOAD, pos);
+						pos++;
 					} else if ("I".equals(s)) { // int
-						mv.visitVarInsn(Opcodes.ILOAD, i);
+						mv.visitVarInsn(Opcodes.ILOAD, pos);
+						pos++;
 					} else if ("J".equals(s)) { // long
-						mv.visitVarInsn(Opcodes.LLOAD, i);
+						mv.visitVarInsn(Opcodes.LLOAD, pos);
+						pos+=2;
 					} else if (s.startsWith("L")) { // class
-						mv.visitVarInsn(Opcodes.ALOAD, i);
+						mv.visitVarInsn(Opcodes.ALOAD, pos);
+						pos++;
 					} else if ("S".equals(s)) { // short
-						mv.visitVarInsn(Opcodes.ILOAD, i);
+						mv.visitVarInsn(Opcodes.ILOAD, pos);
+						pos++;
 					} else if ("Z".equals(s)) { // bool
-						mv.visitVarInsn(Opcodes.ILOAD, i);
+						mv.visitVarInsn(Opcodes.ILOAD, pos);
+						pos++;
 					} else if (s.startsWith("[")) { // array
-						mv.visitVarInsn(Opcodes.ALOAD, i);
+						mv.visitVarInsn(Opcodes.ALOAD, pos);
+						pos++;
 					} else {
 						throw new RuntimeException("Unknown type signature " + s);
 					}
@@ -329,10 +340,9 @@ public class Main {
 		protected final String className, pcMethodName, methodName;
 		protected final ClassRewriter containClassVisitor;
 
-		private String lastAllocatedType = null;
-		private boolean dupVisited = true;
+//		private String lastAllocatedType = null;
+//		private boolean dupVisited = false;
 
-		
 		public MethodAdapter(MethodVisitor mv, String className, String methodName, String pcMethodName,
 				ClassRewriter cv) {
 			super(ASM5, mv);
@@ -343,18 +353,14 @@ public class Main {
 		}
 
 		private void sampleInstCounter() {
-			if (lastAllocatedType != null && !dupVisited) {
-				//something wrong here.
-				String t = lastAllocatedType;
-				lastAllocatedType = null;
-				sampleInstCounter();
-				super.visitTypeInsn(Opcodes.NEW, t);
-				if (dupVisited) {
-					sampleInstCounter();
-					super.visitInsn(Opcodes.DUP);
-					dupVisited = false;
-				}
-			}						
+//			if (lastAllocatedType != null && !dupVisited) {
+//				// //something wrong here.
+//				// String t = lastAllocatedType;
+//				// lastAllocatedType = null;
+//				// sampleInstCounter();
+//				// super.visitTypeInsn(Opcodes.NEW, t);
+//				throw new RuntimeException("This should not happen!");
+//			}
 			super.visitIntInsn(BIPUSH, instCounter);
 			super.visitMethodInsn(INVOKESTATIC, className, pcMethodName, "(I)V", false);
 			instCounter++;
@@ -362,13 +368,15 @@ public class Main {
 
 		@Override
 		public void visitInsn(int opcode) {
-			if (opcode==Opcodes.DUP && lastAllocatedType!=null) {
-				//do nothing for now.
-				dupVisited = true;
-			} else {
+//			if (opcode == Opcodes.DUP && lastAllocatedType != null) {
+//				// do nothing for now.
+//				System.err.println("Suppressing DUP for " + lastAllocatedType);
+//				dupVisited = true;
+//				lastAllocatedType=null;
+//			} else {
 				sampleInstCounter();
 				super.visitInsn(opcode);
-			}
+//			}
 		}
 
 		@Override
@@ -382,17 +390,18 @@ public class Main {
 			sampleInstCounter();
 			super.visitVarInsn(opcode, var);
 		}
-		
+
 		@Override
 		public void visitTypeInsn(int opcode, String type) {
-			if (opcode==Opcodes.NEW && !applicationClassNames.contains(type)) {
-				//don't copy a new because it might be followed
-				//by a constructor call.
-				lastAllocatedType = type;
-			} else {
+//			if (opcode == Opcodes.NEW && !applicationClassNames.contains(type)) {
+//				// don't copy a new because it might be followed
+//				// by a constructor call.
+//				lastAllocatedType = type;
+//			} else {
+//				lastAllocatedType = null;
 				sampleInstCounter();
 				super.visitTypeInsn(opcode, type);
-			}
+//			}
 		}
 
 		@Override
@@ -401,29 +410,20 @@ public class Main {
 			super.visitFieldInsn(opcode, owner, name, desc);
 		}
 
-
-
 		@Override
 		public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
-			//check if this is a constructor call and we have suppressed a NEW and a DUP
-			//and check if we can wrap this constructor. 
-			String newVarType = null;
-			if (opcode==Opcodes.INVOKESPECIAL &&  dupVisited && lastAllocatedType!=null) {
-				newVarType = lastAllocatedType;
-				lastAllocatedType=null;
-				sampleInstCounter();
-			} else {
-				sampleInstCounter();
-			}
-			
+			// check if this is a constructor call and we have suppressed a NEW
+			// and a DUP
+			// and check if we can wrap this constructor.
+			sampleInstCounter();
+
 			if (applicationClassNames.contains(owner)) {
 				super.visitMethodInsn(opcode, owner, name, desc, itf);
 				return;
-			} else if ("<init>".equals(name) && newVarType==null) {
+			} else if ("<init>".equals(name)) {
 				// don't wrap constructors because of this
-				// "Type uninitialized 0 (current frame, stack[1]) is not
-				// assignable to ..."
-				// exception				
+				// it is the constructor of the super class...
+				// need a better conditional here.
 				super.visitMethodInsn(opcode, owner, name, desc, itf);
 				return;
 			} else {
@@ -432,28 +432,26 @@ public class Main {
 				if (opcode == Opcodes.INVOKESTATIC) {
 					// leave desc as is
 				} else {
-					
 					if (owner.endsWith(";") && (owner.startsWith("L") || owner.startsWith("["))) {
-						//don't touch it.
-						System.err.println("Skipping call to " + owner+"."+name+desc);
+						// don't touch it.
+						System.err.println("Skipping call to " + owner + "." + name + desc);
 						super.visitMethodInsn(opcode, owner, name, desc, itf);
 						return;
-					} else if (opcode == Opcodes.INVOKESPECIAL && name.equals("<init>")) {
-						Verify.verify(wrapperDesc.endsWith(")V"));
-						Verify.verifyNotNull(newVarType);
-						StringBuilder sb = new StringBuilder();
-						sb.append(wrapperDesc.substring(0, wrapperDesc.length()-1));
-						sb.append("L");
-						sb.append(newVarType);
-						sb.append(";");
-						wrapperDesc = sb.toString();						
+//					} else if (opcode == Opcodes.INVOKESPECIAL && name.equals("<init>")) {
+//						Verify.verify(wrapperDesc.endsWith(")V"));
+//						StringBuilder sb = new StringBuilder();
+//						sb.append(wrapperDesc.substring(0, wrapperDesc.length() - 1));
+//						sb.append("L");
+//						sb.append(owner);
+//						sb.append(";");
+//						wrapperDesc = sb.toString();
 					} else {
-						StringBuilder sb = new StringBuilder();	
+						StringBuilder sb = new StringBuilder();
 						sb.append("(L");
 						sb.append(owner);
 						sb.append(";");
 						sb.append(desc.substring(1));
-						wrapperDesc = sb.toString();						
+						wrapperDesc = sb.toString();
 					}
 				}
 				final String wrappedMethodName = this.containClassVisitor.lookupWrapperMethod(opcode, owner, name, desc,
@@ -461,51 +459,51 @@ public class Main {
 				super.visitMethodInsn(Opcodes.INVOKESTATIC, className, wrappedMethodName, wrapperDesc, false);
 				return;
 			}
-	}
+		}
 
-	@Override
-	public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
-		// TODO Auto-generated method stub
-		sampleInstCounter();
-		super.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
-	}
+		@Override
+		public void visitInvokeDynamicInsn(String name, String desc, Handle bsm, Object... bsmArgs) {
+			// TODO Auto-generated method stub
+			sampleInstCounter();
+			super.visitInvokeDynamicInsn(name, desc, bsm, bsmArgs);
+		}
 
-	@Override
-	public void visitLdcInsn(Object cst) {
-		sampleInstCounter();
-		super.visitLdcInsn(cst);
-	}
+		@Override
+		public void visitLdcInsn(Object cst) {
+			sampleInstCounter();
+			super.visitLdcInsn(cst);
+		}
 
-	@Override
-	public void visitIincInsn(int var, int increment) {
-		sampleInstCounter();
-		super.visitIincInsn(var, increment);
-	}
+		@Override
+		public void visitIincInsn(int var, int increment) {
+			sampleInstCounter();
+			super.visitIincInsn(var, increment);
+		}
 
-	@Override
-	public void visitMultiANewArrayInsn(String desc, int dims) {
-		sampleInstCounter();
-		super.visitMultiANewArrayInsn(desc, dims);
-	}
+		@Override
+		public void visitMultiANewArrayInsn(String desc, int dims) {
+			sampleInstCounter();
+			super.visitMultiANewArrayInsn(desc, dims);
+		}
 
-	@Override
-	public void visitTableSwitchInsn(int min, int max, Label dflt, Label... labels) {
-		sampleInstCounter();
-		super.visitTableSwitchInsn(min, max, dflt, labels);
-	}
+		@Override
+		public void visitTableSwitchInsn(int min, int max, Label dflt, Label... labels) {
+			sampleInstCounter();
+			super.visitTableSwitchInsn(min, max, dflt, labels);
+		}
 
-	@Override
-	public void visitLookupSwitchInsn(Label dflt, int[] keys, Label[] labels) {
-		sampleInstCounter();
-		super.visitLookupSwitchInsn(dflt, keys, labels);
-	}
+		@Override
+		public void visitLookupSwitchInsn(Label dflt, int[] keys, Label[] labels) {
+			sampleInstCounter();
+			super.visitLookupSwitchInsn(dflt, keys, labels);
+		}
 
-	@Override
-	public void visitJumpInsn(int opcode, Label label) {
-		sampleInstCounter();
-		super.visitJumpInsn(opcode, label);
-	}
+		@Override
+		public void visitJumpInsn(int opcode, Label label) {
+			sampleInstCounter();
+			super.visitJumpInsn(opcode, label);
+		}
 
-}
+	}
 
 }

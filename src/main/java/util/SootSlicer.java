@@ -184,10 +184,14 @@ public class SootSlicer {
 		// }
 		// System.err.println("****** ");
 
+		
 		Iterator<Pair<PptTopLevel, ValueTuple>> iterator = trace.trace.iterator();
 		SootMethod sm = createTraceMethod(iterator, containingClass);
+		
+		addAssertFalseIfNecessary(sm);
+		
 		addFakeReturn(sm);
-
+		
 		try {
 			sm.getActiveBody().validate();
 		} catch (Exception e) {
@@ -195,8 +199,9 @@ public class SootSlicer {
 			System.err.println(newMethod.getActiveBody());
 			throw e;
 		}
+		
 		UnusedLocalEliminator.v().transform(sm.getActiveBody());
-		// System.err.println(".......");
+		
 	}
 
 	/**
@@ -205,6 +210,7 @@ public class SootSlicer {
 	 * @param sm
 	 */
 	private void addFakeReturn(SootMethod sm) {
+
 		if (sm.getReturnType() instanceof VoidType) {
 			sm.getActiveBody().getUnits().add(Jimple.v().newReturnVoidStmt());
 		} else if (sm.getReturnType() instanceof RefLikeType || sm.getReturnType() instanceof PrimType) {
@@ -214,6 +220,24 @@ public class SootSlicer {
 		}
 	}
 
+	private void addAssertFalseIfNecessary(SootMethod sm) {
+		//if the body doesn't end on assert, add an assert false.
+		Unit lastUnit = sm.getActiveBody().getUnits().getLast();
+		boolean endsOnAssert = false;		
+		if (lastUnit instanceof InvokeStmt) {
+			SootMethod lastMethod = ((InvokeStmt)lastUnit).getInvokeExpr().getMethod();
+			if (lastMethod.getName().contains(assertionMethodName)) {
+				endsOnAssert = true;
+			}
+		} else if (lastUnit instanceof ThrowStmt) {
+			sm.getActiveBody().getUnits().removeLast();
+			endsOnAssert=false;
+		}
+		if (!endsOnAssert) {
+			sm.getActiveBody().getUnits().add(makeAssertNotEquals(IntConstant.v(0), IntConstant.v(0)));
+		}
+	}
+	
 	private Value getDefaultValue(soot.Type t) {
 		if (t instanceof RefLikeType) {
 			return NullConstant.v();
@@ -517,8 +541,10 @@ public class SootSlicer {
 			return NullConstant.v();
 		} else if (vi.type == ProglangType.INT || vi.type == ProglangType.BOOLEAN || vi.type == ProglangType.CHAR) {
 			return IntConstant.v(((Long) val).intValue());
-		} else if (vi.type == ProglangType.LONG_PRIMITIVE || vi.type == ProglangType.LONG_OBJECT) {
+		} else if (vi.type == ProglangType.LONG_PRIMITIVE) {
 			return LongConstant.v((Long) val);
+		} else if (vi.type == ProglangType.DOUBLE) {
+			return DoubleConstant.v((Double)val);
 		} else if (vi.type == ProglangType.STRING) {
 			VarInfo vi_str = ppt.a.find_var_by_name(vi.name()+".toString");
 			val = ppt.b.getValueOrNull(vi_str);
@@ -775,7 +801,7 @@ public class SootSlicer {
 		sootOpt.set_src_prec(Options.src_prec_class);
 		
 		sootOpt.set_java_version(Options.java_version_1_8);
-		sootOpt.set_asm_backend(false);
+		sootOpt.set_asm_backend(true);
 
 		if (!classPath.contains(classDir.getAbsolutePath())) {
 			classPath+=File.separator+classDir.getAbsolutePath();
@@ -788,6 +814,7 @@ public class SootSlicer {
 
 		sootOpt.setPhaseOption("jb.a", "enabled:false");
 		sootOpt.setPhaseOption("jop.cpf", "enabled:false");		
+		sootOpt.setPhaseOption("jop.cfg", "enabled:true");		
 		sootOpt.setPhaseOption("jb", "use-original-names:true");
 
 //		Scene.v().loadClassAndSupport("java.lang.System");
