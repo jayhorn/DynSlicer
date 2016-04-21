@@ -90,8 +90,7 @@ public class Main {
 					}
 				}
 				try {
-					instrumentClass(classFile.getAbsolutePath(), transformedClass.getAbsolutePath());
-					System.out.println("Transformed " + classFile);
+					instrumentClass(classFile.getAbsolutePath(), transformedClass.getAbsolutePath());					
 				} catch (Exception e) {
 					System.err
 							.println("Failed to transform " + classFile.getAbsolutePath() + " :\n\t" + e.getMessage());
@@ -102,7 +101,7 @@ public class Main {
 			if (failed) {
 				// throw new RuntimeException("FAILED");
 			}
-			System.out.println("Done.");
+			
 		} catch (MalformedURLException e) {
 			throw new RuntimeException(e.getMessage());
 		} catch (IOException e) {
@@ -213,8 +212,7 @@ public class Main {
 				} else if (c == '[') {
 					s += c; // do not add to ret yet.
 					continue;
-				} else {
-					System.err.println("Desc: " + desc);
+				} else {					
 					throw new RuntimeException(
 							"Don't know type " + c + " between " + desc.substring(0, i) + " and " + desc.substring(i));
 				}
@@ -241,15 +239,14 @@ public class Main {
 
 				final String retString = wrapperDesc.substring(wrapperDesc.lastIndexOf(')') + 1);
 
-//				if (opcode == Opcodes.INVOKESPECIAL) {
-//					// if this is a constructor, add the new statement as well
-//					// to keep the bytecode verifier happy.
-//					Verify.verify(retString.startsWith("L") && retString.endsWith(";"), "Can't handle " + retString);
-//					final String tname = retString.substring(1, retString.length() - 1);
-//					System.out.println("Hello " + tname);
-//					mv.visitTypeInsn(Opcodes.NEW, tname);
-//					mv.visitInsn(Opcodes.DUP);
-//				}
+				if (opcode == Opcodes.INVOKESPECIAL) {
+					// if this is a constructor, add the new statement as well
+					// to keep the bytecode verifier happy.
+					Verify.verify(retString.startsWith("L") && retString.endsWith(";"), "Can't handle " + retString);
+					final String tname = retString.substring(1, retString.length() - 1);					
+					mv.visitTypeInsn(Opcodes.NEW, tname);
+					mv.visitInsn(Opcodes.DUP);
+				}
 
 				List<String> argStrings = splitDescription(wrapperDesc.substring(1, wrapperDesc.lastIndexOf(')')));
 				for (int i = 0; i < argStrings.size(); i++) {
@@ -332,6 +329,10 @@ public class Main {
 		protected final String className, pcMethodName, methodName;
 		protected final ClassRewriter containClassVisitor;
 
+		private String lastAllocatedType = null;
+		private boolean dupVisited = true;
+
+		
 		public MethodAdapter(MethodVisitor mv, String className, String methodName, String pcMethodName,
 				ClassRewriter cv) {
 			super(ASM5, mv);
@@ -342,6 +343,18 @@ public class Main {
 		}
 
 		private void sampleInstCounter() {
+			if (lastAllocatedType != null && !dupVisited) {
+				//something wrong here.
+				String t = lastAllocatedType;
+				lastAllocatedType = null;
+				sampleInstCounter();
+				super.visitTypeInsn(Opcodes.NEW, t);
+				if (dupVisited) {
+					sampleInstCounter();
+					super.visitInsn(Opcodes.DUP);
+					dupVisited = false;
+				}
+			}						
 			super.visitIntInsn(BIPUSH, instCounter);
 			super.visitMethodInsn(INVOKESTATIC, className, pcMethodName, "(I)V", false);
 			instCounter++;
@@ -349,8 +362,13 @@ public class Main {
 
 		@Override
 		public void visitInsn(int opcode) {
-			sampleInstCounter();
-			super.visitInsn(opcode);
+			if (opcode==Opcodes.DUP && lastAllocatedType!=null) {
+				//do nothing for now.
+				dupVisited = true;
+			} else {
+				sampleInstCounter();
+				super.visitInsn(opcode);
+			}
 		}
 
 		@Override
@@ -364,11 +382,17 @@ public class Main {
 			sampleInstCounter();
 			super.visitVarInsn(opcode, var);
 		}
-
+		
 		@Override
 		public void visitTypeInsn(int opcode, String type) {
-			sampleInstCounter();
-			super.visitTypeInsn(opcode, type);
+			if (opcode==Opcodes.NEW && !applicationClassNames.contains(type)) {
+				//don't copy a new because it might be followed
+				//by a constructor call.
+				lastAllocatedType = type;
+			} else {
+				sampleInstCounter();
+				super.visitTypeInsn(opcode, type);
+			}
 		}
 
 		@Override
@@ -377,25 +401,29 @@ public class Main {
 			super.visitFieldInsn(opcode, owner, name, desc);
 		}
 
-		private boolean mustNotBeWrapped(String owner, String name) {
-//			if (!this.methodName.equals("<init>")) {
-//				System.err.println("Only wrapping in constructor " + owner + "." + name);
-//				return false;
-//			}
-			return "<init>".equals(name);
-		}
+
 
 		@Override
 		public void visitMethodInsn(int opcode, String owner, String name, String desc, boolean itf) {
-			sampleInstCounter();
+			//check if this is a constructor call and we have suppressed a NEW and a DUP
+			//and check if we can wrap this constructor. 
+			String newVarType = null;
+			if (opcode==Opcodes.INVOKESPECIAL &&  dupVisited && lastAllocatedType!=null) {
+				newVarType = lastAllocatedType;
+				lastAllocatedType=null;
+				sampleInstCounter();
+			} else {
+				sampleInstCounter();
+			}
+			
 			if (applicationClassNames.contains(owner)) {
 				super.visitMethodInsn(opcode, owner, name, desc, itf);
 				return;
-			} else if (mustNotBeWrapped(owner, name)) {
+			} else if ("<init>".equals(name) && newVarType==null) {
 				// don't wrap constructors because of this
 				// "Type uninitialized 0 (current frame, stack[1]) is not
 				// assignable to ..."
-				// exception
+				// exception				
 				super.visitMethodInsn(opcode, owner, name, desc, itf);
 				return;
 			} else {
@@ -410,16 +438,15 @@ public class Main {
 						System.err.println("Skipping call to " + owner+"."+name+desc);
 						super.visitMethodInsn(opcode, owner, name, desc, itf);
 						return;
-//					} else if (opcode == Opcodes.INVOKESPECIAL && name.equals("<init>")) {
-						//DO NOTHING FOR NOW.
-//						Verify.verify(wrapperDesc.endsWith(")V"));
-//						StringBuilder sb = new StringBuilder();
-//						sb.append(wrapperDesc.substring(0, wrapperDesc.length()-1));
-//						sb.append("L");
-//						sb.append(owner);
-//						sb.append(";");
-//						wrapperDesc = sb.toString();
-//						System.err.println("New wrapper desc: " + wrapperDesc);
+					} else if (opcode == Opcodes.INVOKESPECIAL && name.equals("<init>")) {
+						Verify.verify(wrapperDesc.endsWith(")V"));
+						Verify.verifyNotNull(newVarType);
+						StringBuilder sb = new StringBuilder();
+						sb.append(wrapperDesc.substring(0, wrapperDesc.length()-1));
+						sb.append("L");
+						sb.append(newVarType);
+						sb.append(";");
+						wrapperDesc = sb.toString();						
 					} else {
 						StringBuilder sb = new StringBuilder();	
 						sb.append("(L");

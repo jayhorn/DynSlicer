@@ -58,7 +58,7 @@ public class Main {
 		try {
 			classListFile = createClassListFile(classes);
 			RandoopRunner rr = new RandoopRunner();
-			rr.run(randoopClassPath, classListFile, testSrcDir, 10, 100);
+			rr.run(randoopClassPath, classListFile, testSrcDir, 1, 2);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
