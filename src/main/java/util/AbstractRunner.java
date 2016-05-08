@@ -31,49 +31,9 @@ public abstract class AbstractRunner {
 			process.waitFor();
 		} catch (Exception e) {
 			e.printStackTrace(System.err);
+			throw new RuntimeException(e.getMessage());
 		}		
-		// System.out.println("exec: " + cmd);
-		// try {
-		// Process process = Runtime.getRuntime()
-		// .exec(cmd.toString());
-		// System.err.println(process.waitFor());
-		// } catch (Exception e) {
-		// e.printStackTrace(System.err);
-		// }
-		// try {
-		// Process process = Runtime.getRuntime()
-		// .exec(cmd.toString());
-		// Worker worker = new Worker(process);
-		// worker.start();
-		// try {
-		// worker.join(10000);
-		// } catch (InterruptedException ex) {
-		// worker.interrupt();
-		// Thread.currentThread().interrupt();
-		// System.err.println("Failed to generate PDF from dot");
-		// } finally {
-		// process.destroy();
-		// }
-		//
-		// } catch (Throwable e) {
-		// System.err.println(e.toString());
-		// }
+		
 	}
 
-//	static class Worker extends Thread {
-//		public final Process process;
-//		public Integer exit;
-//
-//		Worker(Process process) {
-//			this.process = process;
-//		}
-//
-//		public void run() {
-//			try {
-//				exit = process.waitFor();
-//			} catch (InterruptedException ignore) {
-//				return;
-//			}
-//		}
-//	}
 }

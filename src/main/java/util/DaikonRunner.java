@@ -24,6 +24,7 @@ import dynslicer.Main;
  */
 public class DaikonRunner extends AbstractRunner {
 
+	
 	public Set<DaikonTrace> run(String classPath, String mainClass, Set<String> classesToInclude) {
 		// Run Daikon
 		final File dtraceFileName = new File(mainClass + ".dtrace.gz");
@@ -36,7 +37,7 @@ public class DaikonRunner extends AbstractRunner {
 		cmd.add("-classpath");
 		cmd.add(classPath + File.pathSeparator + Main.basePath+"lib/daikon.jar");
 		cmd.add("daikon.Chicory");
-		
+		cmd.add("--nesting-depth=1");
 		StringBuilder sb = new StringBuilder();
 		sb.append("--ppt-select-pattern=^(ErrorTestDriver|ErrorTest(\\d)+");
 		for (String className : getNamespacesFromClasses(classesToInclude)) {
@@ -44,22 +45,21 @@ public class DaikonRunner extends AbstractRunner {
 			sb.append(className);
 		}
 		sb.append(")\\S*");
-//		sb.append("--ppt-select-pattern=\"\\S*\"");
 		String inclusionRegex = sb.toString();
 //		System.err.println(inclusionRegex);
 		cmd.add(inclusionRegex);
 		
 //		cmd.add("--dtrace-file=ErrorTestDriver.dtrace");
 		cmd.add(mainClass);
-		execute(cmd);
-		
+		System.out.println("Running Daikon");
+		execute(cmd);		
 		// gunzip the dtrace file
 //		cmd = new LinkedList<String>();
 //		cmd.add("gunzip");
 //		cmd.add("-f");
 //		cmd.add(dtraceFileName.getName());
 //		execute(cmd);
-
+		System.err.println("Done generating DTRACE file");
 		return parseDTraceFile(dtraceFileName.getAbsolutePath());
 	}
 
@@ -83,6 +83,9 @@ public class DaikonRunner extends AbstractRunner {
 		} catch (Exception e) {
 			throw new Error(e);
 		}
+		for (DaikonTrace dt : processor.traces) {
+			cleanUpTrailingPptsInTrace(dt);
+		}
 		return processor.traces;
 	}
 
@@ -101,19 +104,32 @@ public class DaikonRunner extends AbstractRunner {
 		public void process_sample(PptMap all_ppts, PptTopLevel ppt, ValueTuple vt, /* @Nullable */ Integer nonce) {
 			FileIO.compute_orig_variables(ppt, vt.vals, vt.mods, nonce);
 			FileIO.compute_derived_variables(ppt, vt.vals, vt.mods);
-			// Intern the sample, to save space, since we are storing them all.
+			// Intern the sample, to save space, since we are storing them all.			
 			vt = new ValueTuple(vt.vals, vt.mods);			
 			final String enterTestRegex = "ErrorTest(\\d)+\\.test(\\d)+\\(\\):::ENTER";			
 			if (ppt.name().matches(enterTestRegex)) {
-				currentTrace = new DaikonTrace();
+				currentTrace = new DaikonTrace();				
 				currentTrace.addPoint(ppt, vt);
 				traces.add(currentTrace);
 			} else if (currentTrace!=null) {
 				currentTrace.addPoint(ppt, vt);
-			}
+			}			
 		}
 	}
 
+	/**
+	 * Remove all the program points at the end of the trace that are in the ErrorTestDriver
+	 * @param dt
+	 */
+	private void cleanUpTrailingPptsInTrace(DaikonTrace dt) {		
+		Pair<PptTopLevel, ValueTuple> last = dt.trace.get(dt.trace.size()-1);
+		while (last.a.name.startsWith("ErrorTestDriver.")) {
+			dt.trace.remove(last);				
+			last = dt.trace.get(dt.trace.size()-1);				
+		}
+	}
+
+	
 	public static class DaikonTrace {
 		public final List<Pair<PptTopLevel, ValueTuple>> trace = new LinkedList<Pair<PptTopLevel, ValueTuple>>();
 		

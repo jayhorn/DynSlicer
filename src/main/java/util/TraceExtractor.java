@@ -65,6 +65,7 @@ import soot.jimple.NullConstant;
 import soot.jimple.ParameterRef;
 import soot.jimple.ReturnStmt;
 import soot.jimple.ReturnVoidStmt;
+import soot.jimple.SpecialInvokeExpr;
 import soot.jimple.Stmt;
 import soot.jimple.StringConstant;
 import soot.jimple.SwitchStmt;
@@ -76,7 +77,7 @@ import soot.tagkit.Tag;
 import soot.toolkits.scalar.UnusedLocalEliminator;
 import util.DaikonRunner.DaikonTrace;
 
-public class SootSlicer {
+public class TraceExtractor {
 	public static final String pcMethodNameSuffix = "__PC__METHOD";
 	public static final String pcMethodArgName = "arg";
 	public static final String wrapperMethodNameSuffix = "__WRAPPER__METHOD";
@@ -93,18 +94,18 @@ public class SootSlicer {
 	final Stack<String> pcMethodStack = new Stack<String>();
 	private boolean haveToPushToPcStack = false;
 
-	
 	public static void main(String[] args) {
 		// For testing only!
-		SootSlicer sc = new SootSlicer();
+		TraceExtractor sc = new TraceExtractor();
 		DaikonRunner dr = new DaikonRunner();
-		sc.computeErrorSlices(new File(args[0]), args[1], dr.parseDTraceFile("ErrorTestDriver.dtrace"));
+		System.out.println("Reading dtrace file");
+		Set<DaikonTrace> traces = dr.parseDTraceFile("ErrorTestDriver.dtrace.gz");
+		System.out.println("Start slicing");
+		sc.computeErrorSlices(new File(args[0]), args[1], traces);
 	}
 
 	public static int slicerErrors = 0;
-	
-	
-	
+
 	/**
 	 * Returns a soot class that contains one method per trace. Each method
 	 * contains the sequence of statements executed on that trace.
@@ -138,17 +139,19 @@ public class SootSlicer {
 				computeErrorSlice(t, myClass);
 			} catch (Throwable e) {
 				slicerErrors++;
-				e.printStackTrace(System.err);					
+				e.printStackTrace(System.err);
 			}
 			resetFields();
 		}
 		return myClass;
 	}
-	
+
 	private void resetFields() {
-		newMethod = null; sm = null; body = null;
+		newMethod = null;
+		sm = null;
+		body = null;
 		newLocalCounter = 0;
-		pcMethodStack.clear();	
+		pcMethodStack.clear();
 	}
 
 	private SootMethod makeAssertMethod(SootClass myClass, soot.Type type) {
@@ -184,14 +187,12 @@ public class SootSlicer {
 		// }
 		// System.err.println("****** ");
 
-		
+		try {
 		Iterator<Pair<PptTopLevel, ValueTuple>> iterator = trace.trace.iterator();
 		SootMethod sm = createTraceMethod(iterator, containingClass);
-		
 		addAssertFalseIfNecessary(sm);
-		
 		addFakeReturn(sm);
-		
+
 		try {
 			sm.getActiveBody().validate();
 		} catch (Exception e) {
@@ -199,9 +200,15 @@ public class SootSlicer {
 			System.err.println(newMethod.getActiveBody());
 			throw e;
 		}
-		
+
 		UnusedLocalEliminator.v().transform(sm.getActiveBody());
-		
+		} catch (Exception e) {
+//			for (Pair<PptTopLevel, ValueTuple> p : trace.trace) {
+//				System.err.println(p.a.name);
+//			}
+			e.printStackTrace(System.err);
+			throw e;
+		}
 	}
 
 	/**
@@ -221,23 +228,25 @@ public class SootSlicer {
 	}
 
 	private void addAssertFalseIfNecessary(SootMethod sm) {
-		//if the body doesn't end on assert, add an assert false.
 		Unit lastUnit = sm.getActiveBody().getUnits().getLast();
-		boolean endsOnAssert = false;		
-		if (lastUnit instanceof InvokeStmt) {
-			SootMethod lastMethod = ((InvokeStmt)lastUnit).getInvokeExpr().getMethod();
-			if (lastMethod.getName().contains(assertionMethodName)) {
-				endsOnAssert = true;
-			}
-		} else if (lastUnit instanceof ThrowStmt) {
+		boolean requiresAssertFalse = false;
+		if (lastUnit instanceof ThrowStmt) {
 			sm.getActiveBody().getUnits().removeLast();
-			endsOnAssert=false;
+			requiresAssertFalse = true;
+		} else if (lastUnit instanceof InvokeStmt && ((InvokeStmt)lastUnit).getInvokeExpr() instanceof SpecialInvokeExpr) {
+			/*
+			 * If the last statement on the trace is a constructor call, we have to add an assertion.
+			 * usually, this assertion is introduced by the instrumenter but this does not work
+			 * for constructor call.
+			 */
+//			SpecialInvokeExpr sivk = (SpecialInvokeExpr)((InvokeStmt)lastUnit).getInvokeExpr();
+			requiresAssertFalse = true;
 		}
-		if (!endsOnAssert) {
-			sm.getActiveBody().getUnits().add(makeAssertNotEquals(IntConstant.v(0), IntConstant.v(0)));
+		if (requiresAssertFalse) {
+			sm.getActiveBody().getUnits().add(makeAssertNotEquals(sm.getActiveBody().getUnits().getLast(), IntConstant.v(0), IntConstant.v(0)));
 		}
 	}
-	
+
 	private Value getDefaultValue(soot.Type t) {
 		if (t instanceof RefLikeType) {
 			return NullConstant.v();
@@ -278,7 +287,6 @@ public class SootSlicer {
 		newMethod.setActiveBody(newBody);
 		return newMethod;
 	}
-
 
 	private SootMethod createTraceMethod(Iterator<Pair<PptTopLevel, ValueTuple>> iterator,
 			final SootClass containingClass) {
@@ -322,14 +330,12 @@ public class SootSlicer {
 							if (!callStack.isEmpty()) {
 								callStack.pop();
 							}
-							SootMethod tmp = methodStack.pop();
-							System.out.println("Jumping over " + tmp.getName());
+							methodStack.pop();
 							pcMethodStack.pop();
 						}
 						if (!pcMethodStack.isEmpty()) {
 							sm = methodStack.peek();
 							body = sm.retrieveActiveBody();
-							System.out.println("Exception to " + sm.getName());
 							exceptionalJump = true;
 						} else {
 							return newMethod;
@@ -413,10 +419,13 @@ public class SootSlicer {
 						Unit callee = callStack.pop();
 						if (callee instanceof DefinitionStmt) {
 							DefinitionStmt call = (DefinitionStmt) callee;
-							newBody.getUnits().add(copySootStmt(
-									Jimple.v().newAssignStmt(call.getLeftOp(), rstmt.getOp()), substiutionMap));
+							Unit asn = copySootStmt(
+									Jimple.v().newAssignStmt(call.getLeftOp(), rstmt.getOp()), substiutionMap);
+							asn.addAllTagsOf(rstmt);//keep the line number of the return
+							newBody.getUnits().add(asn);
 						} else {
-							newBody.getUnits().add(copySootStmt(u, substiutionMap));
+//							newBody.getUnits().add(copySootStmt(u, substiutionMap));
+							throw new RuntimeException("Not implemented");
 						}
 					}
 				} else if (((Stmt) u).containsInvokeExpr()) {
@@ -451,7 +460,7 @@ public class SootSlicer {
 				Pair<PptTopLevel, ValueTuple> next = peekNextPpt(ppt);
 				Unit call = callStack.pop();
 				SootMethod callee = ((Stmt) call).getInvokeExpr().getMethod();
-				if (next.a.name.contains(wrapperMethodNameSuffix) && next.a.name.contains(":::EXIT")) {
+				if (next!=null && next.a.name.contains(wrapperMethodNameSuffix) && next.a.name.contains(":::EXIT")) {
 					Pair<PptTopLevel, ValueTuple> pre = ppt;
 					ppt = iterator.next();
 					Set<VarInfo> changedVars = findChangedVariables(pre, ppt);
@@ -469,11 +478,17 @@ public class SootSlicer {
 								break;
 							}
 						}
-						Verify.verifyNotNull(retVi);						
-						Value rhs = daikonValueToSootValue(retVi, ppt, newBody);
-						Unit asn = Jimple.v().newAssignStmt(((DefinitionStmt) call).getLeftOp(), rhs);
-						asn.addAllTagsOf(call);
-						newBody.getUnits().add(copySootStmt(asn, substiutionMap));
+						if (retVi != null) {
+							Value rhs = daikonValueToSootValue(retVi, ppt, newBody);
+							Unit asn = Jimple.v().newAssignStmt(((DefinitionStmt) call).getLeftOp(), rhs);
+							asn.addAllTagsOf(call);
+							newBody.getUnits().add(copySootStmt(asn, substiutionMap));
+						} else {
+							System.err.println("Could not find return var for "+ppt.a.name+" ignoring the statement.");
+							for (VarInfo vi : ppt.a.var_infos) {
+								System.err.println("\t"+vi.toString());
+							}
+						}
 					}
 				} else {					
 					int offset = 0;
@@ -481,14 +496,15 @@ public class SootSlicer {
 						offset = 1;
 						Value v1 = ((Stmt) call).getInvokeExpr().getArg(0);
 						Value v2 = NullConstant.v();
-						Unit asrt = makeAssertNotEquals(v1, v2);								
+						Unit asrt = makeAssertNotEquals(call, v1, v2);
 						asrt.addAllTagsOf(call);
 						asrt = copySootStmt(asrt, substiutionMap);
 						newBody.getUnits().add(asrt);
 					} else {
-//						newBody.getUnits().add(copySootStmt(call, substiutionMap));
-//						throw new RuntimeException();
-						//dont do anything.
+						// newBody.getUnits().add(copySootStmt(call,
+						// substiutionMap));
+						// throw new RuntimeException();
+						// dont do anything.
 					}
 					// TODO: assert that the current input is illegal.
 					// throw new RuntimeException("throws an ex "+ppt.a.name);
@@ -497,22 +513,24 @@ public class SootSlicer {
 						VarInfo argVar = ppt.a.find_var_by_name("arg" + i);
 						Value v2 = daikonValueToSootValue(argVar, ppt, newBody);
 						if (v1.equals(v2)) {
-							System.err.println("Not adding "+v1+"!="+v2 + " beause its trivial");
+							System.err.println("Not adding " + v1 + "!=" + v2 + " beause its trivial");
 						} else {
-							Unit asrt = makeAssertNotEquals(v1, v2);
-							asrt.addAllTagsOf(call);	
+							Unit asrt = makeAssertNotEquals(call, v1, v2);
+							asrt.addAllTagsOf(call);
 							newBody.getUnits().add(copySootStmt(asrt, substiutionMap));
 						}
-//						System.err.println("adding assertion " + asrt);
+						// System.err.println("adding assertion " + asrt);
 					}
 
 				}
 			} else if (ppt.a.name.endsWith(":::ENTER")) {
 				enterMethod(ppt, methodStack, callStack, newBody, substiutionMap);
 			} else if (ppt.a.name.contains(":::EXIT")) {
-				methodStack.pop();
+				SootMethod exitedMethod = methodStack.pop();
 				sm = methodStack.peek();
 				body = sm.retrieveActiveBody();
+				Verify.verify(!pcMethodStack.isEmpty(), "pcMethodStack must not be empty when goign from "
+						+ exitedMethod.getName() + " to " + sm.getName());
 				pcMethodStack.pop();
 			} else {
 				System.err.println("Don't know how to handle " + ppt.a.name);
@@ -521,17 +539,17 @@ public class SootSlicer {
 
 		return newMethod;
 	}
-	
-	public Unit makeAssertNotEquals(Value v1, Value v2) {
+
+	public Unit makeAssertNotEquals(Unit host, Value v1, Value v2) {
 		soot.Type assertType = v1.getType();
 		if (assertType instanceof RefLikeType) {
 			assertType = RefType.v();
 		}
 		SootMethod assertMethod = assertMethods.get(assertType);
-		Verify.verifyNotNull(assertMethod,"No method of "+v1.getType());
-//TODO: something goes wrong with the locals here
-		Unit asrt = Jimple.v().newInvokeStmt(
-				Jimple.v().newStaticInvokeExpr(assertMethod.makeRef(), v1, v2));
+		Verify.verifyNotNull(assertMethod, "No method of " + v1.getType());
+		// TODO: something goes wrong with the locals here
+		Unit asrt = Jimple.v().newInvokeStmt(Jimple.v().newStaticInvokeExpr(assertMethod.makeRef(), v1, v2));
+		asrt.addAllTagsOf(host);
 		return asrt;
 	}
 
@@ -544,28 +562,27 @@ public class SootSlicer {
 		} else if (vi.type == ProglangType.LONG_PRIMITIVE) {
 			return LongConstant.v((Long) val);
 		} else if (vi.type == ProglangType.DOUBLE) {
-			return DoubleConstant.v((Double)val);
+			return DoubleConstant.v((Double) val);
 		} else if (vi.type == ProglangType.STRING) {
-			VarInfo vi_str = ppt.a.find_var_by_name(vi.name()+".toString");
+			VarInfo vi_str = ppt.a.find_var_by_name(vi.name() + ".toString");
 			val = ppt.b.getValueOrNull(vi_str);
 			return StringConstant.v(String.valueOf(val));
 		}
 
-		
-//		System.err.println(this.sm.getName()+ " "+vi.name() + " " + vi.type + " " + val);
-//		System.err.println(vi);
+		// System.err.println(this.sm.getName()+ " "+vi.name() + " " + vi.type +
+		// " " + val);
+		// System.err.println(vi);
 		if (Scene.v().containsClass(vi.type.toString())) {
 			SootClass sc = Scene.v().loadClass(vi.type.toString(), SootClass.SIGNATURES);
-			Local newlocal = Jimple.v().newLocal("newLocal_"+(newLocalCounter++), RefType.v(sc));
+			Local newlocal = Jimple.v().newLocal("newLocal_" + (newLocalCounter++), RefType.v(sc));
 			newBody.getLocals().add(newlocal);
 			newBody.getUnits().add(Jimple.v().newAssignStmt(newlocal, Jimple.v().newNewExpr(RefType.v(sc))));
-			//TODO ------------------
+			// TODO ------------------
 			return newlocal;
 		}
-		
+
 		throw new RuntimeException("not implemented for type " + vi.type + " of value " + val);
 	}
-	
 
 	private Pair<PptTopLevel, ValueTuple> peekNextPpt(Pair<PptTopLevel, ValueTuple> ppt) {
 		return peekNextPpt(ppt, 0);
@@ -645,7 +662,7 @@ public class SootSlicer {
 		for (Local l : body.getLocals()) {
 			if (!substiutionMap.containsKey(l)) {
 				if (l.getType() instanceof NullType) {
-					System.out.println("ignoring local "+l.getName() + " because it doesn't have a type");
+					System.out.println("ignoring local " + l.getName() + " because it doesn't have a type");
 					continue;
 				}
 				Local newLocal = Jimple.v().newLocal(sm.getName() + "_" + l.getName(), l.getType());
@@ -662,10 +679,23 @@ public class SootSlicer {
 				ParameterRef pr = (ParameterRef) idStmt.getRightOp();
 				if (!callStack.isEmpty()) {
 					InvokeExpr ivk = ((Stmt) callStack.peek()).getInvokeExpr();
+					Verify.verify(ivk.getMethod().getName().equals(sm.getName()), ivk.getMethod().getName() +"!="+sm.getName());
 					// Now we have to add and AssignStmt instead of a
 					// DefinitionStmt.
-					Stmt s = Jimple.v().newAssignStmt(idStmt.getLeftOp(), ivk.getArg(pr.getIndex()));
-					newBody.getUnits().add(copySootStmt(s, substiutionMap));
+					try {
+						Unit s = copySootStmt(Jimple.v().newAssignStmt(idStmt.getLeftOp(), ivk.getArg(pr.getIndex())), substiutionMap);
+						s.addAllTagsOf(sm);						
+						//find the line number of the first stmt
+						s.addAllTagsOf(((JimpleBody)body).getFirstNonIdentityStmt());
+						newBody.getUnits().add(s);
+					} catch (Exception e) {
+						System.err.println("Failed to inline call");
+						System.err.println("In method " + sm.getSignature());
+						System.err.println(u);
+						System.err.println(callStack.peek());
+						e.printStackTrace(System.err);
+						throw new RuntimeException();
+					}
 				} else {
 					newBody.getUnits().add(copySootStmt(u, substiutionMap));
 				}
@@ -783,7 +813,7 @@ public class SootSlicer {
 		} else if ("short".equals(s)) {
 			t = ShortType.v();
 		} else if ("byte".equals(s)) {
-			t = ByteType.v();			
+			t = ByteType.v();
 		} else {
 			t = Scene.v().getRefType(s);
 		}
@@ -799,12 +829,12 @@ public class SootSlicer {
 		sootOpt.set_prepend_classpath(true); // -pp
 		sootOpt.set_output_format(Options.output_format_none);
 		sootOpt.set_src_prec(Options.src_prec_class);
-		
+
 		sootOpt.set_java_version(Options.java_version_1_8);
 		sootOpt.set_asm_backend(true);
 
 		if (!classPath.contains(classDir.getAbsolutePath())) {
-			classPath+=File.separator+classDir.getAbsolutePath();
+			classPath += File.pathSeparator + classDir.getAbsolutePath();
 		}
 		sootOpt.set_soot_classpath(classPath);
 
@@ -813,34 +843,34 @@ public class SootSlicer {
 		sootOpt.set_process_dir(processDirs);
 
 		sootOpt.setPhaseOption("jb.a", "enabled:false");
-		sootOpt.setPhaseOption("jop.cpf", "enabled:false");		
-		sootOpt.setPhaseOption("jop.cfg", "enabled:true");		
+		sootOpt.setPhaseOption("jop.cpf", "enabled:false");
+		sootOpt.setPhaseOption("jop.cfg", "enabled:true");
 		sootOpt.setPhaseOption("jb", "use-original-names:true");
 
-//		Scene.v().loadClassAndSupport("java.lang.System");
-//		Scene.v().loadClassAndSupport("java.lang.Thread");
-//		Scene.v().loadClassAndSupport("java.lang.ThreadGroup");
+		// Scene.v().loadClassAndSupport("java.lang.System");
+		// Scene.v().loadClassAndSupport("java.lang.Thread");
+		// Scene.v().loadClassAndSupport("java.lang.ThreadGroup");
 
 		Scene.v().loadBasicClasses();
 		Scene.v().loadNecessaryClasses();
-		
-//		for (String s : dynslicer.Main.getClasses(classDir.getAbsolutePath())) {
-//			if (!Scene.v().containsClass(s)) {
-//				try {
-//					System.out.print("Loading " + s);
-//					SootClass sc = Scene.v().loadClass(s, SootClass.SIGNATURES);
-//					sc.setApplicationClass();
-//					Scene.v().addClass(sc);
-//					System.out.println("... done");
-//				} catch (Exception e) {
-//					e.printStackTrace(System.err);
-//				}
-//			}
-//		}
+
+		// for (String s :
+		// dynslicer.Main.getClasses(classDir.getAbsolutePath())) {
+		// if (!Scene.v().containsClass(s)) {
+		// try {
+		// System.out.print("Loading " + s);
+		// SootClass sc = Scene.v().loadClass(s, SootClass.SIGNATURES);
+		// sc.setApplicationClass();
+		// Scene.v().addClass(sc);
+		// System.out.println("... done");
+		// } catch (Exception e) {
+		// e.printStackTrace(System.err);
+		// }
+		// }
+		// }
 
 		// for (SootClass sc : Scene.v().getClasses())
 		// System.err.println(sc.getName());
-		 
 
 		for (SootClass sc : Scene.v().getClasses()) {
 			if (sc.resolvingLevel() < SootClass.SIGNATURES) {

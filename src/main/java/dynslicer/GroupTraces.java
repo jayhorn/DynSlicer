@@ -29,7 +29,10 @@ import soot.jimple.InstanceFieldRef;
 import soot.jimple.Jimple;
 import soot.jimple.NullConstant;
 import soot.jimple.StaticFieldRef;
-import util.SootSlicer;
+import soot.jimple.toolkits.scalar.ConstantPropagatorAndFolder;
+import soot.jimple.toolkits.scalar.CopyPropagator;
+import util.Slicer;
+import util.TraceExtractor;
 
 /**
  * @author schaef
@@ -37,20 +40,31 @@ import util.SootSlicer;
  */
 public class GroupTraces {
 
-	SootSlicer sootSlicer;
+	TraceExtractor sootSlicer;
 	
-	public void groupStuff(SootClass traceClass, SootSlicer ss) {
+	public void groupStuff(SootClass traceClass, TraceExtractor ss) {
 		sootSlicer = ss;
 		Report report = new Report();
 		SootBodyTransformer trans = new SootBodyTransformer(report);
 		int traceCtr = 0;
 		for (SootMethod sm : traceClass.getMethods()) {
-			if (!sm.isConstructor() && !sm.getName().contains(SootSlicer.assertionMethodName)) {
-//				CopyPropagator.v().transform(sm.getActiveBody());
-//				ConstantPropagatorAndFolder.v().transform(sm.getActiveBody());
-				replaceFieldsByLocals(sm);				
+			if (!sm.isConstructor() && !sm.getName().contains(TraceExtractor.assertionMethodName)) {
+				CopyPropagator.v().transform(sm.getActiveBody());
+				ConstantPropagatorAndFolder.v().transform(sm.getActiveBody());
+				try {
+				replaceFieldsByLocals(sm);
 				trans.transform(sm.getActiveBody());
+				
+				
+				Slicer slicer = new Slicer();
+				slicer.sliceFromLastAssertion(sm);
+				
+				System.err.println(sm.getActiveBody());
+				
 				traceCtr++;
+				} catch (Exception e) {
+					System.err.println("Faild to transfrom trace method " + sm.getName());
+				}
 			}
 		}
 		
@@ -61,8 +75,9 @@ public class GroupTraces {
 		org.joogie.Options.v().setTimeOut(60);
 		pa.runFullProgramAnalysis();
 		
-		List<LocalizedTrace> locTraces = new LinkedList<LocalizedTrace>(ProgramAnalysis.localizedTraces);
-		System.err.println("Failed slice attempts: " +  SootSlicer.slicerErrors);
+		List<LocalizedTrace> locTraces = new LinkedList<LocalizedTrace>(pa.localizedTraces);
+		
+		System.err.println("Failed slice attempts: " +  TraceExtractor.slicerErrors);
 		System.err.println("Total number of traces: " +  traceCtr);
 		System.err.println("Total number of localized traces: " + locTraces.size() );
 		Map<String, List<LocalizedTrace>> map = new HashMap<String, List<LocalizedTrace>>();
@@ -133,7 +148,7 @@ public class GroupTraces {
 					if (assertType instanceof RefType) {
 						assertType = RefType.v();
 					}
-					Unit asrt = sootSlicer.makeAssertNotEquals(l, NullConstant.v());
+					Unit asrt = sootSlicer.makeAssertNotEquals(u, l, NullConstant.v());
 					asrt.addAllTagsOf(u);
 					sm.getActiveBody().getUnits().insertBefore(asrt, u);					
 					vb.setValue(lrepl.get(r.getField()));

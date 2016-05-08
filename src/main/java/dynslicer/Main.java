@@ -22,13 +22,15 @@ import util.DaikonRunner;
 import util.DaikonRunner.DaikonTrace;
 import util.InstrumentationRunner;
 import util.RandoopRunner;
-import util.SootSlicer;
+import util.TraceExtractor;
 import util.Util;
 
 public class Main {
 
 	public static String basePath = "./";
-	
+	static String junit_jar = basePath+"lib/junit.jar";
+	static String daikon_jar = basePath+"lib/daikon.jar";
+		
 	public static void main(String[] args) throws IOException {
 		if (args.length < 3) {
 			System.err.println("use with classpath, classdir, and testDir as arguments.");
@@ -36,18 +38,19 @@ public class Main {
 		}
 		String classPath = args[0];
 		final File classDir = new File(args[1]);
-		final File testDir = new File("./PlayItSafeFolderName/");		
-		if (testDir.exists()) {
-			FileUtils.deleteDirectory(testDir);
+		final File transformedClassDirectory = new File("./PlayItSafeFolderName/");		
+		if (transformedClassDirectory.exists()) {
+			FileUtils.deleteDirectory(transformedClassDirectory);
 		}
-		final File testSrcDir = new File("./testSources/");
 		
 		if (args.length >= 4) {
 			basePath = args[3];
+			junit_jar = basePath+"lib/junit.jar";
+			daikon_jar = basePath+"lib/daikon.jar";			
 		}
 		
-		int timeLimit = 2;
-		int testLimit = 2;
+		int timeLimit = 1;
+		int testLimit = 3;
 		if (args.length >= 5) {
 			timeLimit = Integer.parseInt(args[4]);
 		}
@@ -57,8 +60,28 @@ public class Main {
 		}
 
 
-		final String junit = basePath+"lib/junit.jar";
+
+		Set<DaikonTrace> traces = createDTraceFile(classDir, classPath, transformedClassDirectory, timeLimit, testLimit);
+		System.out.println("Completed: Running Daikon on transformed classes");
+		System.err.println("Number of Traces " + traces.size());
 		
+		// compute the slices and run the fault localization:
+		
+		System.out.println("Computing the slices");
+		TraceExtractor ss = new TraceExtractor();
+		final String transformedClassPath = classPath + File.pathSeparator + junit_jar+File.pathSeparator+transformedClassDirectory;
+		SootClass traceClass = ss.computeErrorSlices(transformedClassDirectory, transformedClassPath, traces);
+		System.out.println("Completed: Computing the slices");
+		
+		System.out.println("Run the fault localization.");
+		GroupTraces gt = new GroupTraces();
+		gt.groupStuff(traceClass, ss);
+	}
+	
+	private static Set<DaikonTrace> createDTraceFile(File classDir, String classPath, File outputDirectory, int randoopTimeLimit, int randoopTestLimit) throws IOException {
+		
+		final File testSrcDir = makeEmptryDirectory("_testSrc");
+		outputDirectory = makeEmptryDirectory(outputDirectory.getAbsolutePath());
 		System.out.println("Run Randoop");
 		Set<String> classes = getClasses(classDir);
 		// run randoop
@@ -67,7 +90,7 @@ public class Main {
 		try {
 			classListFile = createClassListFile(classes);
 			RandoopRunner rr = new RandoopRunner();
-			rr.run(randoopClassPath, classListFile, testSrcDir, timeLimit, testLimit);
+			rr.run(randoopClassPath, classListFile, testSrcDir, randoopTimeLimit, randoopTestLimit);
 		} catch (IOException e) {
 			e.printStackTrace();
 		} finally {
@@ -84,43 +107,29 @@ public class Main {
 		FileUtils.deleteDirectory(tempDir);
 		FileUtils.copyDirectory(classDir, tempDir);
 		//compile test cases:
-		final String classPathAndJUnit = classPath + File.pathSeparator + junit;
+		final String classPathAndJUnit = classPath + File.pathSeparator + junit_jar;
 		Util.compileJavaFiles(testSrcDir, classPathAndJUnit+ File.pathSeparator + classDir.getAbsolutePath(), tempDir);		
 		System.out.println("Completed: Compile generated tests");
 		
 		System.out.println("Transforming class files");
 		InstrumentationRunner ir = new InstrumentationRunner();
 		final String instrumentClassPath = classPathAndJUnit + File.pathSeparator + tempDir.getAbsolutePath();
-		ir.run(tempDir, testDir, instrumentClassPath);
+		ir.run(tempDir, outputDirectory, instrumentClassPath);
 		//now the instrumented classes and tests are in testDir and we can delete tempDir
 //		FileUtils.deleteDirectory(tempDir);
 		System.out.println("Transformation done.");
-		
-//		InstrumentConditionals icond = new InstrumentConditionals();
-//		icond.transformAllClasses(new File(classDir), testDir);
 
 		System.out.println("Running Daikon on transformed classes");
 		DaikonRunner dr = new DaikonRunner();
 		List<String> cp = new LinkedList<String>();
 		cp.add(classPathAndJUnit);
-		cp.add(basePath+"lib/daikon.jar");
-		cp.add(testDir.getAbsolutePath());		
+		cp.add(daikon_jar);
+		cp.add(outputDirectory.getAbsolutePath());		
 		final String daikonClassPath = StringUtils.join(cp, File.pathSeparator);
-		Set<DaikonTrace> traces = dr.run(daikonClassPath, "ErrorTestDriver", classes);
-		System.out.println("Completed: Running Daikon on transformed classes");
-		System.err.println("Number of Traces " + traces.size());
-		
-		// compute the slices and run the fault localization:
-		
-		System.out.println("Computing the slices");
-		SootSlicer ss = new SootSlicer();
-		SootClass traceClass = ss.computeErrorSlices(testDir, daikonClassPath+File.pathSeparator+junit, traces);
-		System.out.println("Completed: Computing the slices");
-		
-		System.out.println("Run the fault localization.");
-		GroupTraces gt = new GroupTraces();
-		gt.groupStuff(traceClass, ss);
+		return dr.run(daikonClassPath, "ErrorTestDriver", classes);
 	}
+	
+
 
 	private static File createClassListFile(Set<String> classes) throws IOException {
 		File classListFile = File.createTempFile("clist", "txt");
@@ -148,6 +157,15 @@ public class Main {
 			}
 		}
 		return classes;
+	}
+
+	private static File makeEmptryDirectory(String directoryName) throws IOException {
+		final File dir = new File(directoryName);
+		if (dir.exists()) {
+			FileUtils.deleteDirectory(dir);
+		}
+		FileUtils.forceMkdir(dir);
+		return dir;
 	}
 
 }

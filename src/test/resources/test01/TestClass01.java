@@ -29,8 +29,8 @@ public class TestClass01 {
 		return s.length();
 	}
 
-	public String foo(int x) {
-		if (x>0) {
+	private String foo(int x) {
+		if (x<0) {
 			return null;
 		}
 		return s;

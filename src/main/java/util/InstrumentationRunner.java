@@ -16,7 +16,6 @@ import dynslicer.Main;
 public class InstrumentationRunner extends AbstractRunner {
 
 	public void run(final File classDir, File outDir, String classPath) {
-		// Run Daikon
 		final String instrumenterClassPath = classPath + File.pathSeparator + Main.basePath+"lib/instrumenter.jar";
 		List<String> cmd = new LinkedList<String>();
 		cmd.add("java");
@@ -24,7 +23,7 @@ public class InstrumentationRunner extends AbstractRunner {
 		cmd.add(instrumenterClassPath);
 		cmd.add("bc_instrumenter.Main");
 		cmd.add(classDir.getAbsolutePath());
-		cmd.add(outDir.getAbsolutePath());
-				execute(cmd);
+		cmd.add(outDir.getAbsolutePath());		
+		execute(cmd);
 	}
 }

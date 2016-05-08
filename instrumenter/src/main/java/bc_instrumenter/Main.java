@@ -31,6 +31,7 @@ import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.util.CheckClassAdapter;
 
 import com.google.common.base.Verify;
+import com.google.common.base.VerifyException;
 
 /**
  * @author schaef
@@ -58,22 +59,25 @@ public class Main {
 	public static final String instanceWrapperSuffix = "__HASBASE__";
 
 	protected static Set<String> applicationClassNames;
-
+	
+	
 	public void transformAllClasses(File classDir, File outDir) {
 		applicationClassNames = new LinkedHashSet<String>();
-		boolean failed = false;
 		// Load all classes in the classDir and remember their name.
 		try (URLClassLoader cl = new URLClassLoader(new URL[] { classDir.toURI().toURL() });) {
 			for (Iterator<File> iter = FileUtils.iterateFiles(classDir, new String[] { "class" }, true); iter
 					.hasNext();) {
 				File classFile = iter.next();
 				try (FileInputStream is = new FileInputStream(classFile);) {
-					ClassReader cr = new ClassReader(is);
-					applicationClassNames.add(cr.getClassName());
+					ClassReader cr = new ClassReader(is);					
 					final String className = cr.getClassName().replace('/', '.');
 					cl.loadClass(className);
+					applicationClassNames.add(cr.getClassName());
+				} catch (IllegalAccessError e) {
+					System.err.println("Failed to load "+classFile.getAbsolutePath());
 				} catch (Exception e) {
 					e.printStackTrace(System.err);
+					throw new RuntimeException(e.getMessage());
 				}
 			}
 
@@ -86,23 +90,11 @@ public class Main {
 				if (tClassName.contains(File.separator)) {
 					File tClassDir = new File(tClassName.substring(0, tClassName.lastIndexOf(File.separator)));
 					if (tClassDir.mkdirs()) {
-						System.out.println("Writing transformed classes to " + tClassDir.getAbsolutePath());
+//						System.out.println("Writing transformed classes to " + tClassDir.getAbsolutePath());
 					}
 				}
-				try {
-					instrumentClass(classFile.getAbsolutePath(), transformedClass.getAbsolutePath());
-					System.out.println("Transformed classes  " + classFile.getAbsolutePath());
-				} catch (Exception e) {
-					System.err
-							.println("Failed to transform " + classFile.getAbsolutePath() + " :\n\t" + e.getMessage());
-					e.printStackTrace(System.err);
-					failed = true;
-				}
+				instrumentClass(classFile.getAbsolutePath(), transformedClass.getAbsolutePath());
 			}
-			if (failed) {
-				// throw new RuntimeException("FAILED");
-			}
-
 		} catch (MalformedURLException e) {
 			throw new RuntimeException(e.getMessage());
 		} catch (IOException e) {
@@ -127,15 +119,20 @@ public class Main {
 	public void instrumentClass(final String inFile, final String outFile) {
 		try (FileInputStream is = new FileInputStream(inFile); FileOutputStream fos = new FileOutputStream(outFile);) {
 			ClassReader cr = new ClassReader(is);
-			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS );			
+			ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS | ClassWriter.COMPUTE_FRAMES );			
 			cr.accept(new ClassRewriter(cw), 0);
+//			cr.accept(cw, 0);
 			StringWriter sw = new StringWriter();
-			PrintWriter pw = new PrintWriter(sw);
-			CheckClassAdapter.verify(new ClassReader(cw.toByteArray()), false, pw);
-			Verify.verify(sw.toString().length() == 0, sw.toString());
+			PrintWriter pw = new PrintWriter(sw);			
 			fos.write(cw.toByteArray());
-		} catch (IOException e) {
+			CheckClassAdapter.verify(cr, false, pw);
+			Verify.verify(sw.toString().length() == 0, inFile +": "+ sw.toString());			
+		} catch (IOException e) {			
 			e.printStackTrace(System.err);
+		} catch (VerifyException e) {
+			System.err.println("Failed to verify: " + inFile);
+//			e.printStackTrace(System.err);
+//			throw new RuntimeException(e.getMessage());
 		}
 	}
 
@@ -145,6 +142,10 @@ public class Main {
 
 		public final String getSuperName() {
 			return this.superName;
+		}
+
+		public final String getClassName() {
+			return this.className;
 		}
 
 		public ClassRewriter(final ClassVisitor cv) {
@@ -229,7 +230,11 @@ public class Main {
 
 			if (!foobar.containsKey(signature)) {
 				int accessModifier = ACC_PRIVATE | ACC_STATIC;
-				String firstPart = owner.replace("/", "_") + name.replace("<", "_").replace(">", "_");
+				String cleanOwner = owner.replace("/", "_").replace("[", "_ARR_");
+				cleanOwner = cleanOwner.replace("$", "_D_");
+				cleanOwner = cleanOwner.replace(";", "_S_");
+				final String cleanName = name.replace("<", "_").replace(">", "_");
+				String firstPart = cleanOwner + cleanName;
 				if (!desc.equals(wrapperDesc)) {
 					firstPart += instanceWrapperSuffix;
 				}
@@ -380,6 +385,11 @@ public class Main {
 		}
 
 		@Override
+		public void visitLabel(Label label) {
+			super.visitLabel(label);
+		}
+		
+		@Override
 		public void visitIntInsn(int opcode, int operand) {
 			sampleInstCounter();
 			super.visitIntInsn(opcode, operand);
@@ -432,11 +442,13 @@ public class Main {
 				if (opcode == Opcodes.INVOKESTATIC) {
 					// leave desc as is
 				} else {
-					if (owner.endsWith(";") && (owner.startsWith("L") || owner.startsWith("["))) {
-						// don't touch it.
-						System.err.println("Skipping call to " + owner + "." + name + desc);
-						super.visitMethodInsn(opcode, owner, name, desc, itf);
-						return;
+//					if (owner.endsWith(";") && (owner.startsWith("L") || owner.startsWith("["))) {
+//						// don't touch it.
+//						// e.g., [Lorg/joda/time/convert/ConverterSet$Entry;.clone()Ljava/lang/Object;
+//						// so, array operations.
+//						System.err.println("Skipping call to " + owner + "." + name + desc);
+//						super.visitMethodInsn(opcode, owner, name, desc, itf);
+//						return;
 //					} else if (opcode == Opcodes.INVOKESPECIAL && name.equals("<init>")) {
 //						Verify.verify(wrapperDesc.endsWith(")V"));
 //						StringBuilder sb = new StringBuilder();
@@ -445,14 +457,19 @@ public class Main {
 //						sb.append(owner);
 //						sb.append(";");
 //						wrapperDesc = sb.toString();
-					} else {
+//					} else {
 						StringBuilder sb = new StringBuilder();
-						sb.append("(L");
-						sb.append(owner);
-						sb.append(";");
+						sb.append("(");
+						if (owner.startsWith("[")) {
+							sb.append(owner);
+						} else {
+							sb.append("L");
+							sb.append(owner);
+							sb.append(";");
+						}
 						sb.append(desc.substring(1));
 						wrapperDesc = sb.toString();
-					}
+//					}
 				}
 				final String wrappedMethodName = this.containClassVisitor.lookupWrapperMethod(opcode, owner, name, desc,
 						itf, wrapperDesc);
