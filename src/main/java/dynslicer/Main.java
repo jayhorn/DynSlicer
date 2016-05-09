@@ -50,7 +50,7 @@ public class Main {
 		}
 		
 		int timeLimit = 1;
-		int testLimit = 3;
+		int testLimit = 1;
 		if (args.length >= 5) {
 			timeLimit = Integer.parseInt(args[4]);
 		}

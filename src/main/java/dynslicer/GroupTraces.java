@@ -49,16 +49,19 @@ public class GroupTraces {
 		int traceCtr = 0;
 		for (SootMethod sm : traceClass.getMethods()) {
 			if (!sm.isConstructor() && !sm.getName().contains(TraceExtractor.assertionMethodName)) {
+				System.err.println("Processing "+sm.getName());
 				CopyPropagator.v().transform(sm.getActiveBody());
+				System.err.println("Step 1");
 				ConstantPropagatorAndFolder.v().transform(sm.getActiveBody());
+				System.err.println("Step 2");
 				try {
 				replaceFieldsByLocals(sm);
+				System.err.println("Step 3");
 				trans.transform(sm.getActiveBody());
-				
-				
+				System.err.println("Step 4");				
 				Slicer slicer = new Slicer();
 				slicer.sliceFromLastAssertion(sm);
-				
+				System.err.println("Step 5");
 				System.err.println(sm.getActiveBody());
 				
 				traceCtr++;
@@ -70,11 +73,12 @@ public class GroupTraces {
 		
 		ProgramFactory pf = GlobalsCache.v().getPf();
 		ProgramAnalysis pa = new ProgramAnalysis(pf, report);
+		System.err.println("Step 6");
 		pa.CavModeHack = false;
 		org.joogie.Options.v().useOldStyleEncoding(true);
 		org.joogie.Options.v().setTimeOut(60);
 		pa.runFullProgramAnalysis();
-		
+		System.err.println("Step 7");
 		List<LocalizedTrace> locTraces = new LinkedList<LocalizedTrace>(pa.localizedTraces);
 		
 		System.err.println("Failed slice attempts: " +  TraceExtractor.slicerErrors);

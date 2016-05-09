@@ -16,6 +16,7 @@ import soot.SootMethod;
 import soot.Unit;
 import soot.Value;
 import soot.ValueBox;
+import soot.jimple.FieldRef;
 import soot.jimple.InvokeStmt;
 import soot.toolkits.scalar.UnusedLocalEliminator;
 
@@ -31,7 +32,7 @@ public class Slicer {
 
 		List<Unit> sliced = new LinkedList<Unit>();
 		
-		Set<Local> relevantLocals = new HashSet<Local>();
+		Set<Value> relevantValues = new HashSet<Value>();
 		//first find the last assertion and the variables in this assertion 
 		//from which we want to start slicing.
 		while (listIter.hasPrevious()) {
@@ -40,8 +41,8 @@ public class Slicer {
 					.equals(TraceExtractor.assertionMethodName)) {
 				for (ValueBox vb : u.getUseBoxes()) {
 					Value v = vb.getValue();
-					if (v instanceof Local) {
-						relevantLocals.add((Local)v);
+					if (v instanceof Local || v instanceof FieldRef) {
+						relevantValues.add(v);
 					}
 				}
 				sliced.add(u);
@@ -53,20 +54,20 @@ public class Slicer {
 			Unit u = listIter.previous();
 			boolean definesRelevantLocal = false;
 			for (ValueBox vb : u.getDefBoxes()) {
-				if (relevantLocals.contains(vb.getValue())) {
+				if (relevantValues.contains(vb.getValue())) {
 					definesRelevantLocal = true;
 					/*
 					 * since we know that this is a trace without branching,
 					 * we can remove  the def var from the list of relevant statements.
 					 */
-					relevantLocals.remove(vb.getValue());
+					relevantValues.remove(vb.getValue());
 				}
 			}
 			if (definesRelevantLocal) {
 				for (ValueBox vb : u.getUseBoxes()) {
 					Value v = vb.getValue();
 					if (v instanceof Local) {
-						relevantLocals.add((Local)v);
+						relevantValues.add((Local)v);
 					}
 				}
 				sliced.add(u);

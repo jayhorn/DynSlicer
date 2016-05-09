@@ -1,25 +1,21 @@
 package test06;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
-
-
-
 public class TestClass06 {
 
-	public void writeSignature2SourceLocationMapping(File outFile) throws Exception {
-		BufferedReader br = new BufferedReader(new FileReader(outFile));
-//		try (BufferedReader br = new BufferedReader(new FileReader(outFile))) {
-			String line;
-			while ((line = br.readLine()) != null) {
-			}
-//		} catch (Exception e) {
-//			
-//		}
+	private class A {
+		int i;
+		public A(Object s) {
+			i =s.hashCode();
+		}
+		public int get() {
+			return i;
+		}
 	}
 	
-
+	public void failingConstructor(Object s) {
+		A t = new A(s);
+		t.get();
+		
+	}
 
 }
-

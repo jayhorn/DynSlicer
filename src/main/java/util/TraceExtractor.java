@@ -187,7 +187,6 @@ public class TraceExtractor {
 		// }
 		// System.err.println("****** ");
 
-		try {
 		Iterator<Pair<PptTopLevel, ValueTuple>> iterator = trace.trace.iterator();
 		SootMethod sm = createTraceMethod(iterator, containingClass);
 		addAssertFalseIfNecessary(sm);
@@ -202,13 +201,7 @@ public class TraceExtractor {
 		}
 
 		UnusedLocalEliminator.v().transform(sm.getActiveBody());
-		} catch (Exception e) {
-//			for (Pair<PptTopLevel, ValueTuple> p : trace.trace) {
-//				System.err.println(p.a.name);
-//			}
-			e.printStackTrace(System.err);
-			throw e;
-		}
+		System.err.println(sm.getActiveBody());
 	}
 
 	/**
@@ -233,17 +226,22 @@ public class TraceExtractor {
 		if (lastUnit instanceof ThrowStmt) {
 			sm.getActiveBody().getUnits().removeLast();
 			requiresAssertFalse = true;
-		} else if (lastUnit instanceof InvokeStmt && ((InvokeStmt)lastUnit).getInvokeExpr() instanceof SpecialInvokeExpr) {
+		} else if (lastUnit instanceof InvokeStmt
+				&& ((InvokeStmt) lastUnit).getInvokeExpr() instanceof SpecialInvokeExpr) {
 			/*
-			 * If the last statement on the trace is a constructor call, we have to add an assertion.
-			 * usually, this assertion is introduced by the instrumenter but this does not work
+			 * If the last statement on the trace is a constructor call, we have
+			 * to add an assertion.
+			 * usually, this assertion is introduced by the instrumenter but
+			 * this does not work
 			 * for constructor call.
 			 */
-//			SpecialInvokeExpr sivk = (SpecialInvokeExpr)((InvokeStmt)lastUnit).getInvokeExpr();
+			// SpecialInvokeExpr sivk =
+			// (SpecialInvokeExpr)((InvokeStmt)lastUnit).getInvokeExpr();
 			requiresAssertFalse = true;
 		}
 		if (requiresAssertFalse) {
-			sm.getActiveBody().getUnits().add(makeAssertNotEquals(sm.getActiveBody().getUnits().getLast(), IntConstant.v(0), IntConstant.v(0)));
+			sm.getActiveBody().getUnits().add(
+					makeAssertNotEquals(sm.getActiveBody().getUnits().getLast(), IntConstant.v(0), IntConstant.v(0)));
 		}
 	}
 
@@ -419,13 +417,16 @@ public class TraceExtractor {
 						Unit callee = callStack.pop();
 						if (callee instanceof DefinitionStmt) {
 							DefinitionStmt call = (DefinitionStmt) callee;
-							Unit asn = copySootStmt(
-									Jimple.v().newAssignStmt(call.getLeftOp(), rstmt.getOp()), substiutionMap);
-							asn.addAllTagsOf(rstmt);//keep the line number of the return
+							Unit asn = copySootStmt(Jimple.v().newAssignStmt(call.getLeftOp(), rstmt.getOp()),
+									substiutionMap);
+							asn.addAllTagsOf(rstmt);// keep the line number of
+													// the return
 							newBody.getUnits().add(asn);
+						} else if (callee instanceof InvokeStmt){
+							//if the callee was an InvokeStmt, the return value is
+							//ignored.
 						} else {
-//							newBody.getUnits().add(copySootStmt(u, substiutionMap));
-							throw new RuntimeException("Not implemented");
+							throw new RuntimeException("Not implemented " + callee + "\n" + ppt.a.name);
 						}
 					}
 				} else if (((Stmt) u).containsInvokeExpr()) {
@@ -460,7 +461,7 @@ public class TraceExtractor {
 				Pair<PptTopLevel, ValueTuple> next = peekNextPpt(ppt);
 				Unit call = callStack.pop();
 				SootMethod callee = ((Stmt) call).getInvokeExpr().getMethod();
-				if (next!=null && next.a.name.contains(wrapperMethodNameSuffix) && next.a.name.contains(":::EXIT")) {
+				if (next != null && next.a.name.contains(wrapperMethodNameSuffix) && next.a.name.contains(":::EXIT")) {
 					Pair<PptTopLevel, ValueTuple> pre = ppt;
 					ppt = iterator.next();
 					Set<VarInfo> changedVars = findChangedVariables(pre, ppt);
@@ -484,13 +485,15 @@ public class TraceExtractor {
 							asn.addAllTagsOf(call);
 							newBody.getUnits().add(copySootStmt(asn, substiutionMap));
 						} else {
-							System.err.println("Could not find return var for "+ppt.a.name+" ignoring the statement.");
+							System.err.println(
+									"Could not find return var for " + ppt.a.name + " ignoring the statement.");
 							for (VarInfo vi : ppt.a.var_infos) {
-								System.err.println("\t"+vi.toString());
+								System.err.println("\t" + vi.toString());
 							}
 						}
 					}
-				} else {					
+				} else {
+					// Wrapped method threw an exception ...
 					int offset = 0;
 					if (callee.getName().contains(instanceWrapperSuffix)) {
 						offset = 1;
@@ -521,7 +524,9 @@ public class TraceExtractor {
 						}
 						// System.err.println("adding assertion " + asrt);
 					}
-
+					if (next == null) {
+						return newMethod;
+					}
 				}
 			} else if (ppt.a.name.endsWith(":::ENTER")) {
 				enterMethod(ppt, methodStack, callStack, newBody, substiutionMap);
@@ -679,14 +684,16 @@ public class TraceExtractor {
 				ParameterRef pr = (ParameterRef) idStmt.getRightOp();
 				if (!callStack.isEmpty()) {
 					InvokeExpr ivk = ((Stmt) callStack.peek()).getInvokeExpr();
-					Verify.verify(ivk.getMethod().getName().equals(sm.getName()), ivk.getMethod().getName() +"!="+sm.getName());
+					Verify.verify(ivk.getMethod().getName().equals(sm.getName()),
+							ivk.getMethod().getName() + "!=" + sm.getName());
 					// Now we have to add and AssignStmt instead of a
 					// DefinitionStmt.
 					try {
-						Unit s = copySootStmt(Jimple.v().newAssignStmt(idStmt.getLeftOp(), ivk.getArg(pr.getIndex())), substiutionMap);
-						s.addAllTagsOf(sm);						
-						//find the line number of the first stmt
-						s.addAllTagsOf(((JimpleBody)body).getFirstNonIdentityStmt());
+						Unit s = copySootStmt(Jimple.v().newAssignStmt(idStmt.getLeftOp(), ivk.getArg(pr.getIndex())),
+								substiutionMap);
+						s.addAllTagsOf(sm);
+						// find the line number of the first stmt
+						s.addAllTagsOf(((JimpleBody) body).getFirstNonIdentityStmt());
 						newBody.getUnits().add(s);
 					} catch (Exception e) {
 						System.err.println("Failed to inline call");
@@ -877,6 +884,7 @@ public class TraceExtractor {
 				sc.setResolvingLevel(SootClass.SIGNATURES);
 			}
 		}
+
 	}
 
 }

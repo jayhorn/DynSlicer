@@ -36,7 +36,7 @@ public class RandoopRunner extends AbstractRunner{
 		cmd.add("randoop.main.Main");
 		cmd.add("gentests");
 		cmd.add("--classlist="+classListFile.getAbsolutePath());
-		cmd.add("--timelimit="+timeSec);
+		cmd.add("--timelimit="+timeSec);		
 		if (outputLimit>0) {
 			cmd.add("--outputlimit="+outputLimit);
 		}
