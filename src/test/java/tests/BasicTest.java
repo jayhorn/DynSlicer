@@ -24,7 +24,7 @@ public class BasicTest {
 		//check without args - should terminate immediately.
 		Main.main(new String[]{});
 
-		final File srcDir = new File("src/test/resources/test06/");
+		final File srcDir = new File("src/test/resources/test07/");
 		File classDir = new File("classes_and_tests");
 		if (classDir.exists()) {
 			FileUtils.deleteDirectory(classDir); 
