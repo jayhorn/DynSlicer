@@ -181,11 +181,11 @@ public class TraceExtractor {
 	 */
 	public void computeErrorSlice(final DaikonTrace trace, final SootClass containingClass) {
 		this.currentTrace = trace;
-		// System.err.println("****** All Events");
-		// for (Pair<PptTopLevel, ValueTuple> ppt : trace.trace) {
-		// System.err.println(ppt.a.name);
-		// }
-		// System.err.println("****** ");
+//		 System.err.println("****** All Events");
+//		 for (Pair<PptTopLevel, ValueTuple> ppt : trace.trace) {
+//		 System.err.println(ppt.a.name);
+//		 }
+//		 System.err.println("****** ");
 
 		Iterator<Pair<PptTopLevel, ValueTuple>> iterator = trace.trace.iterator();
 		SootMethod sm = createTraceMethod(iterator, containingClass);
@@ -200,8 +200,7 @@ public class TraceExtractor {
 			throw e;
 		}
 
-		UnusedLocalEliminator.v().transform(sm.getActiveBody());
-		System.err.println(sm.getActiveBody());
+		UnusedLocalEliminator.v().transform(sm.getActiveBody());		
 	}
 
 	/**
@@ -310,7 +309,8 @@ public class TraceExtractor {
 			ppt = iterator.next();
 
 			boolean exceptionalJump = false;
-
+			boolean justPushedOnCallStack = false;
+			
 			if (ppt.a.name.contains(pcMethodNameSuffix) && ppt.a.name.endsWith(":::ENTER")) {
 				/**
 				 * =============================================================
@@ -327,6 +327,18 @@ public class TraceExtractor {
 						while (!pcMethodStack.isEmpty() && !ppt.a.name.equals(pcMethodStack.peek())) {
 							if (!callStack.isEmpty()) {
 								callStack.pop();
+// I dont think we have to do this because jimple already takes care of that.								
+//								if (callee instanceof InvokeStmt && ((InvokeStmt)callee).getInvokeExpr() instanceof SpecialInvokeExpr) {
+//									//if we leave a constructor with an exception we have to set the 
+//									//corresponding var to null again.
+//									SpecialInvokeExpr ivk = (SpecialInvokeExpr)((InvokeStmt)callee).getInvokeExpr();
+//									if (ivk.getMethod().isConstructor() && !ivk.getMethod().isStatic()) {
+//										//not sure if the condition above is necessary.
+//										Unit asn = copySootStmt(Jimple.v().newAssignStmt(ivk.getBase(), NullConstant.v()), substiutionMap);
+//										asn.addAllTagsOf(callee);
+//										newBody.getUnits().add(asn);
+//									}
+//								}								
 							}
 							methodStack.pop();
 							pcMethodStack.pop();
@@ -367,16 +379,38 @@ public class TraceExtractor {
 						pre = sm.getActiveBody().getUnits().getPredOf(pre);
 					}
 					if (pre != null) {
+						CaughtExceptionRef cer = (CaughtExceptionRef)(((DefinitionStmt) pre).getRightOp());
 						// check if the last element of the newbody is a throw.
 						// if so, remove it and use its op for the assignment
-						Unit last = newBody.getUnits().getLast();
-						newBody.getUnits().removeLast();
-						Unit newasn = null;
+						Unit last = newBody.getUnits().getLast();						
 						if (last instanceof ThrowStmt) {
-							newasn = Jimple.v().newAssignStmt(((DefinitionStmt) pre).getLeftOp(),
+							newBody.getUnits().removeLast();
+							Unit newasn = Jimple.v().newAssignStmt(((DefinitionStmt) pre).getLeftOp(),
 									((ThrowStmt) last).getOp());
+							newBody.getUnits().add(copySootStmt(newasn, substiutionMap));
+						} else {
+							
+							//create a new runtimeexception here.
+							final String name = "__exLocal"+newBody.getLocalCount();
+							RefType t = (RefType)cer.getType();							
+							if (t.getSootClass().isAbstract()) {
+								t = RefType.v(Scene.v().getSootClass("java.lang.RuntimeException"));
+							}
+							Local exVar = Jimple.v().newLocal(name, t);
+							newBody.getLocals().add(exVar);
+							Stmt s = Jimple.v().newAssignStmt(exVar, Jimple.v().newNewExpr(t));
+							s.addAllTagsOf(pre);
+							newBody.getUnits().add(s);
+
+							SootMethod constr = t.getSootClass().getMethod("<init>", new LinkedList<Type>(), VoidType.v());
+							s = Jimple.v().newInvokeStmt(Jimple.v().newSpecialInvokeExpr(exVar, constr.makeRef()));
+							s.addAllTagsOf(pre);
+							newBody.getUnits().add(s);
+
+							Unit newasn = Jimple.v().newAssignStmt(((DefinitionStmt) pre).getLeftOp(),
+									exVar);
+							newBody.getUnits().add(copySootStmt(newasn, substiutionMap));
 						}
-						newBody.getUnits().add(copySootStmt(newasn, substiutionMap));
 					} else {
 						// TODO
 						System.err.println("No catch found for " + u + ". Guess we are done here.");
@@ -438,6 +472,7 @@ public class TraceExtractor {
 						newBody.getUnits().add(copySootStmt(u, substiutionMap));
 					} else {
 						callStack.push(u);
+						justPushedOnCallStack = true;
 					}
 				} else {
 					newBody.getUnits().add(copySootStmt(u, substiutionMap));
@@ -456,6 +491,21 @@ public class TraceExtractor {
 					Verify.verify(arg == (long) i, "Wrong number " + arg + "!=" + i);
 					ppt = iterator.next();
 					Verify.verify(ppt.a.name.contains(pcMethodNameSuffix) && ppt.a.name.contains(":::EXIT"));
+				}
+				if (!iterator.hasNext() && justPushedOnCallStack) {
+					/*
+					 * In this case we just put an InstanceInvoke on the call stack 
+					 * but the base was null and thus it fired an exception and ended
+					 * the trace. This is a bit hacky, I guess.
+					 */
+					callStack.pop();
+					InstanceInvokeExpr ivk = (InstanceInvokeExpr)(((Stmt) u).getInvokeExpr());
+					Value v1 = ivk.getBase();
+					Value v2 = NullConstant.v();
+					Unit asrt = makeAssertNotEquals(u, v1, v2);
+					asrt = copySootStmt(asrt, substiutionMap);
+					newBody.getUnits().add(asrt);
+					return newMethod;							
 				}
 			} else if (ppt.a.name.contains(wrapperMethodNameSuffix) && ppt.a.name.endsWith(":::ENTER")) {
 				Pair<PptTopLevel, ValueTuple> next = peekNextPpt(ppt);
@@ -492,7 +542,8 @@ public class TraceExtractor {
 							}
 						}
 					}
-				} else {
+				} else if (next==null){
+					//TODO:--------------------- check if next==null is the right condition
 					// Wrapped method threw an exception ...
 					int offset = 0;
 					if (callee.getName().contains(instanceWrapperSuffix)) {
@@ -504,9 +555,6 @@ public class TraceExtractor {
 						asrt = copySootStmt(asrt, substiutionMap);
 						newBody.getUnits().add(asrt);
 					} else {
-						// newBody.getUnits().add(copySootStmt(call,
-						// substiutionMap));
-						// throw new RuntimeException();
 						// dont do anything.
 					}
 					// TODO: assert that the current input is illegal.

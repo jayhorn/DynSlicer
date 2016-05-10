@@ -13,9 +13,11 @@ public class TestClass06 {
 	}
 	
 	public void failingConstructor(Object s) {
-		A t = new A(s);
+		A t=null;
+		try {
+			t = new A(s);
+		} catch (Exception e) {}
 		t.get();
-		
 	}
 
 }
